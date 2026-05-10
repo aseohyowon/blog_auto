@@ -112,6 +112,264 @@ const PROVIDERS: Provider[] = [
 type Length = (typeof LENGTHS)[number]['value']
 type BlogType = (typeof BLOG_TYPES)[number]['value']
 
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+function normalizeText(value: string): string {
+  return value.replace(/\s+/g, ' ').trim()
+}
+
+function toSummaryBullets(paragraphs: string[], keyword: string): string[] {
+  const base = paragraphs
+    .filter((p) => p.length >= 30)
+    .slice(0, 4)
+    .map((p) => p.length > 95 ? `${p.slice(0, 95)}...` : p)
+
+  if (base.length >= 4) return base
+
+  const fallback = [
+    `${keyword} 관련 핵심 내용을 빠르게 정리했습니다.`,
+    `${keyword}의 주요 변화와 배경을 이해하기 쉽게 설명합니다.`,
+    `${keyword}가 시장과 사용자 경험에 미치는 영향을 짚어봅니다.`,
+    `${keyword}를 기준으로 비교 포인트와 체크 포인트를 제시합니다.`,
+  ]
+
+  return [...base, ...fallback].slice(0, 4)
+}
+
+function convertGeneralHtmlToItNews(sourceHtml: string, fallbackTopic: string): string {
+  const parser = new DOMParser()
+  const doc = parser.parseFromString(sourceHtml, 'text/html')
+  doc.querySelectorAll('script').forEach((node) => node.remove())
+
+  const title = normalizeText(
+    doc.querySelector('h1')?.textContent
+      ?? doc.querySelector('h2')?.textContent
+      ?? fallbackTopic
+      ?? 'IT 정보 뉴스 브리핑',
+  ) || 'IT 정보 뉴스 브리핑'
+
+  const keyword = title.length > 40 ? title.slice(0, 40) : title
+  const now = new Date()
+  const dateText = `${now.getFullYear()}.${String(now.getMonth() + 1).padStart(2, '0')}.${String(now.getDate()).padStart(2, '0')}`
+
+  const paragraphs = Array.from(doc.querySelectorAll('p'))
+    .map((node) => normalizeText(node.textContent ?? ''))
+    .filter(Boolean)
+
+  const headings = Array.from(doc.querySelectorAll('h2, h3'))
+    .map((node) => normalizeText(node.textContent ?? ''))
+    .filter(Boolean)
+
+  const imageList = Array.from(doc.querySelectorAll('img'))
+    .map((img) => ({
+      src: (img.getAttribute('src') ?? '').trim(),
+      alt: normalizeText(img.getAttribute('alt') ?? ''),
+    }))
+    .filter((img) => img.src.startsWith('http'))
+
+  const heroImage = imageList[0]?.src ?? 'https://placehold.co/860x510/060d1a/1e3a5f?text=IT+News'
+  const galleryA = imageList[1]?.src ?? 'https://placehold.co/600x420/060d1a/1e3a5f?text=Tech+Update'
+  const galleryB = imageList[2]?.src ?? 'https://placehold.co/600x420/060d1a/1e3a5f?text=Market+Brief'
+
+  const summaryBullets = toSummaryBullets(paragraphs, keyword)
+  const bodyChunks = [
+    paragraphs.slice(0, 2),
+    paragraphs.slice(2, 4),
+    paragraphs.slice(4, 6),
+  ]
+
+  const sectionTitles = [
+    headings[0] || `${keyword} 핵심 이슈 정리`,
+    headings[1] || `${keyword} 기술 변화와 영향`,
+    headings[2] || `${keyword} 실사용 관점 체크포인트`,
+  ]
+
+  const totalChars = normalizeText(doc.body.textContent ?? '').length
+  const hCount = doc.querySelectorAll('h1,h2,h3').length
+  const pCount = paragraphs.length
+  const imageCount = imageList.length
+
+  const statValues = [
+    `${Math.max(1, Math.round(totalChars / 120))}분`,
+    `${Math.max(1, hCount)}개`,
+    `${Math.max(1, pCount)}문단`,
+    `${Math.max(1, imageCount)}장`,
+  ]
+
+  const sectionBody = (idx: number): string => {
+    const items = bodyChunks[idx]
+    if (items.length === 0) {
+      return `<p>${escapeHtml(keyword)} 관련 내용을 기반으로 핵심 정보를 재구성했습니다. 이번 섹션에서는 중요한 변화 포인트를 중심으로 독자가 바로 이해할 수 있게 정리합니다.</p>
+      <p>세부 수치나 일정은 변동될 수 있으므로 최신 공식 발표와 함께 확인하는 것이 좋습니다. 필요한 경우 체크리스트 형태로 비교하며 읽어보세요.</p>`
+    }
+    return items.map((p) => `<p>${escapeHtml(p)}</p>`).join('\n')
+  }
+
+  return `<style>
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap');
+.it-wrap{max-width:860px;margin:0 auto;padding:20px 16px;font-family:'Noto Sans KR',sans-serif;color:#e2e8f0;background:#060d1a}
+.it-label{display:block;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#38bdf8;margin-bottom:10px;font-weight:700}
+.it-hero{position:relative;min-height:460px;border-radius:16px;overflow:hidden;margin-bottom:36px;background-image:url('${escapeHtml(heroImage)}');background-size:cover;background-position:center}
+.it-hero::before{content:'';position:absolute;inset:0;background:linear-gradient(160deg,rgba(6,13,26,.92) 0%,rgba(14,50,100,.55) 100%)}
+.it-hero-inner{position:relative;z-index:1;padding:60px 44px}
+.it-hero-meta{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+.it-breaking{background:#ef4444;color:#fff;font-size:10px;font-weight:900;padding:3px 10px;border-radius:4px;letter-spacing:1.3px}
+.it-category{background:#1e3a5f;color:#38bdf8;font-size:11px;font-weight:700;padding:3px 12px;border-radius:4px}
+.it-date{color:rgba(255,255,255,.52);font-size:12px}
+.it-hero h1{font-size:2.1rem;font-weight:900;color:#fff;margin:0 0 10px;line-height:1.25}
+.it-hero-sub{font-size:1rem;color:rgba(255,255,255,.8);line-height:1.75;max-width:620px;margin:0}
+.it-keypoints{background:#0a1628;border:1px solid #1e3a5f;border-radius:14px;padding:24px 28px;margin:30px 0}
+.it-keypoints ul{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:10px}
+.it-keypoints li{display:flex;align-items:flex-start;gap:12px;font-size:14px;color:#cbd5e1;line-height:1.7}
+.it-kp-dot{width:8px;height:8px;border-radius:50%;background:#38bdf8;flex-shrink:0;margin-top:8px}
+.it-body h2{font-size:1.24rem;font-weight:800;color:#f0f9ff;margin:34px 0 12px;border-left:3px solid #38bdf8;padding-left:12px}
+.it-body p{font-size:15px;color:#cbd5e1;line-height:1.84;margin:0 0 14px}
+.it-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:32px 0}
+.it-stat-card{background:#0a1628;border:1px solid #1e3a5f;border-radius:14px;padding:20px 14px;text-align:center}
+.it-stat-num{font-size:1.85rem;font-weight:900;color:#38bdf8;line-height:1;margin-bottom:6px}
+.it-stat-label{font-size:12px;color:#94a3b8}
+.it-table{width:100%;border-collapse:collapse;border-radius:12px;overflow:hidden;margin:30px 0}
+.it-table thead th{background:#0a1628;color:#38bdf8;font-size:12px;padding:14px 16px;text-align:left}
+.it-table td{padding:12px 16px;border-bottom:1px solid #1e3a5f;font-size:14px;color:#cbd5e1;line-height:1.5}
+.it-table tr:nth-child(even) td{background:#080f1e}
+.it-best{color:#38bdf8;font-weight:700}
+.it-timeline{position:relative;padding-left:34px;margin:30px 0}
+.it-timeline::before{content:'';position:absolute;left:10px;top:0;bottom:0;width:2px;background:linear-gradient(180deg,#38bdf8,#0ea5e9,transparent)}
+.it-tl-item{position:relative;margin-bottom:24px}
+.it-tl-item::before{content:'';position:absolute;left:-26px;top:5px;width:12px;height:12px;border-radius:50%;background:#38bdf8;border:2px solid #060d1a}
+.it-tl-date{font-size:11px;color:#38bdf8;font-weight:700;letter-spacing:1px;margin-bottom:4px}
+.it-tl-item h3{font-size:15px;color:#f0f9ff;margin:0 0 4px}
+.it-tl-item p{font-size:14px;color:#94a3b8;line-height:1.68;margin:0}
+.it-expert{background:#0a1628;border:1px solid #1e3a5f;border-radius:16px;padding:30px;margin:30px 0}
+.it-expert-quote{font-size:16px;color:#e2e8f0;line-height:1.9;font-style:italic;margin:0 0 14px}
+.it-expert-name{font-size:14px;font-weight:700;color:#f0f9ff}
+.it-expert-title{font-size:12px;color:#64748b}
+.it-gallery{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin:30px 0}
+.it-gallery img{width:100%;height:auto;max-height:250px;object-fit:cover;border-radius:10px;border:1px solid #1e3a5f;display:block}
+.it-img-caption{font-size:12px;color:#64748b;margin-top:6px;text-align:center}
+.it-cta{background:linear-gradient(135deg,#020810 0%,#0a1a30 100%);border:1px solid rgba(56,189,248,.28);border-radius:18px;padding:44px 36px;text-align:center;margin:40px 0}
+.it-cta h2{color:#fff;font-size:1.4rem;margin:0 0 10px}
+.it-cta p{color:#94a3b8;font-size:14px;line-height:1.7;margin:0 0 20px}
+.it-cta-btn{display:inline-block;background:linear-gradient(90deg,#0ea5e9,#38bdf8);color:#001018;padding:13px 34px;border-radius:10px;font-weight:900;font-size:14px;text-decoration:none}
+.it-footer{border-top:1px solid #1e3a5f;margin-top:48px;padding-top:22px}
+.it-tag{display:inline-block;background:#0a1628;border:1px solid #1e3a5f;border-radius:999px;padding:5px 10px;font-size:12px;margin:0 6px 7px 0;color:#38bdf8}
+.it-close{margin-top:10px;font-size:14px;color:#94a3b8;line-height:1.75}
+@media (max-width:600px){
+  .it-hero-inner{padding:40px 20px}
+  .it-hero h1{font-size:1.6rem}
+  .it-stats{grid-template-columns:repeat(2,1fr)}
+  .it-gallery{grid-template-columns:1fr}
+}
+</style>
+<div class="it-wrap">
+  <section class="it-hero">
+    <div class="it-hero-inner">
+      <div class="it-hero-meta">
+        <span class="it-breaking">BREAKING</span>
+        <span class="it-category">IT NEWS</span>
+        <span class="it-date">${escapeHtml(dateText)}</span>
+      </div>
+      <h1>${escapeHtml(title)}</h1>
+      <p class="it-hero-sub">${escapeHtml(keyword)} 관련 핵심 포인트를 빠르게 읽을 수 있도록 기존 글 내용을 뉴스 포맷으로 재구성했습니다.</p>
+    </div>
+  </section>
+
+  <section>
+    <span class="it-label">KEY TAKEAWAYS</span>
+    <div class="it-keypoints">
+      <ul>
+        ${summaryBullets.map((item) => `<li><span class="it-kp-dot"></span>${escapeHtml(item)}</li>`).join('')}
+      </ul>
+    </div>
+  </section>
+
+  <section class="it-body">
+    <span class="it-label">FULL ARTICLE</span>
+    <h2>${escapeHtml(sectionTitles[0])}</h2>
+    ${sectionBody(0)}
+    <h2>${escapeHtml(sectionTitles[1])}</h2>
+    ${sectionBody(1)}
+    <h2>${escapeHtml(sectionTitles[2])}</h2>
+    ${sectionBody(2)}
+  </section>
+
+  <section>
+    <span class="it-label">BY THE NUMBERS</span>
+    <div class="it-stats">
+      <div class="it-stat-card"><div class="it-stat-num">${escapeHtml(statValues[0])}</div><div class="it-stat-label">읽기 예상 시간</div></div>
+      <div class="it-stat-card"><div class="it-stat-num">${escapeHtml(statValues[1])}</div><div class="it-stat-label">핵심 섹션 수</div></div>
+      <div class="it-stat-card"><div class="it-stat-num">${escapeHtml(statValues[2])}</div><div class="it-stat-label">분석 문단 수</div></div>
+      <div class="it-stat-card"><div class="it-stat-num">${escapeHtml(statValues[3])}</div><div class="it-stat-label">참조 이미지 수</div></div>
+    </div>
+  </section>
+
+  <section>
+    <span class="it-label">SPEC COMPARISON</span>
+    <table class="it-table">
+      <thead>
+        <tr><th>항목</th><th>${escapeHtml(keyword)}</th><th>이전/대안 A</th><th>대안 B</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>핵심 포지션</td><td class="it-best">최신 이슈 반영</td><td>기존 흐름 유지</td><td>보수적 접근</td></tr>
+        <tr><td>정보 밀도</td><td class="it-best">높음</td><td>보통</td><td>보통</td></tr>
+        <tr><td>업데이트 속도</td><td class="it-best">빠름</td><td>중간</td><td>중간</td></tr>
+        <tr><td>실사용 관점</td><td class="it-best">체크포인트 제공</td><td>요약 중심</td><td>개념 중심</td></tr>
+        <tr><td>추천 독자</td><td class="it-best">트렌드 추적형</td><td>입문자</td><td>참고용 독자</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <span class="it-label">TIMELINE</span>
+    <div class="it-timeline">
+      <div class="it-tl-item"><div class="it-tl-date">STEP 1</div><h3>이슈 발생</h3><p>${escapeHtml(keyword)} 관련 주요 변화가 처음 포착되었습니다.</p></div>
+      <div class="it-tl-item"><div class="it-tl-date">STEP 2</div><h3>핵심 정보 공개</h3><p>세부 정보와 비교 포인트가 공개되며 관심이 확대됐습니다.</p></div>
+      <div class="it-tl-item"><div class="it-tl-date">STEP 3</div><h3>시장 반응</h3><p>사용자 관점에서 체감 가능한 장단점이 본격적으로 논의됐습니다.</p></div>
+      <div class="it-tl-item"><div class="it-tl-date">STEP 4</div><h3>실사용 정리</h3><p>현재 시점에서 확인 가능한 체크리스트와 선택 기준이 정리됐습니다.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <span class="it-label">EXPERT ANALYSIS</span>
+    <div class="it-expert">
+      <p class="it-expert-quote">"${escapeHtml(keyword)}는 단순한 기능 추가보다, 사용자가 체감하는 맥락과 연결될 때 가치가 커집니다. 이번 변화는 속도보다 방향성 검증이 중요한 국면입니다."</p>
+      <div class="it-expert-name">김테크 애널리스트</div>
+      <div class="it-expert-title">디지털 제품 전략 연구원</div>
+    </div>
+  </section>
+
+  <section>
+    <span class="it-label">GALLERY</span>
+    <div class="it-gallery">
+      <figure><img src="${escapeHtml(galleryA)}" alt="${escapeHtml(keyword)} 관련 이미지 1" /><figcaption class="it-img-caption">핵심 포인트 시각 자료</figcaption></figure>
+      <figure><img src="${escapeHtml(galleryB)}" alt="${escapeHtml(keyword)} 관련 이미지 2" /><figcaption class="it-img-caption">비교 관점 시각 자료</figcaption></figure>
+    </div>
+  </section>
+
+  <section class="it-cta">
+    <h2>${escapeHtml(keyword)} 후속 업데이트도 놓치지 마세요</h2>
+    <p>이번 이슈와 연결되는 다음 변화까지 빠르게 확인할 수 있도록 핵심 포인트를 계속 업데이트합니다.</p>
+    <a class="it-cta-btn" href="#">관련 이슈 더 보기</a>
+  </section>
+
+  <footer class="it-footer">
+    <span class="it-tag">#IT뉴스</span>
+    <span class="it-tag">#테크트렌드</span>
+    <span class="it-tag">#${escapeHtml(keyword.replace(/\s+/g, ''))}</span>
+    <span class="it-tag">#기술분석</span>
+    <span class="it-tag">#업데이트</span>
+    <p class="it-close">기존 기본 블로그 콘텐츠를 바탕으로 IT 정보/뉴스 형식으로 재구성한 결과입니다. 핵심 흐름을 빠르게 확인하고, 상세 판단은 최신 공식 정보와 함께 검토하세요.</p>
+  </footer>
+</div>`
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function Generator() {
   const [topic,       setTopic]       = useState('')
@@ -135,6 +393,10 @@ export default function Generator() {
   const [loading,     setLoading]     = useState(false)
   const [error,       setError]       = useState('')
   const [tokens,      setTokens]      = useState<number | null>(null)
+  const [lastGeneratedType, setLastGeneratedType] = useState<BlogType | null>(null)
+  const [lastGeneralTopic, setLastGeneralTopic] = useState('')
+  const [lastGeneralHtml, setLastGeneralHtml] = useState('')
+  const [transforming, setTransforming] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
   const [showPremium, setShowPremium] = useState(false)
   const [toast,       setToast]       = useState<ToastData | null>(null)
@@ -377,6 +639,11 @@ export default function Generator() {
 
       setHtml(generatedHtml)
       setTokens(generatedTokens)
+      setLastGeneratedType(blogType)
+      if (blogType === 'general' && generatedHtml) {
+        setLastGeneralHtml(generatedHtml)
+        setLastGeneralTopic(trimmed)
+      }
       if (isCelebrityMode) setTopic(resolvedTopic)
 
       push({ topic: resolvedTopic, tone, model, html: generatedHtml, tokens: generatedTokens })
@@ -386,6 +653,30 @@ export default function Generator() {
       setError(err instanceof Error ? err.message : '오류가 발생했습니다.')
     } finally {
       setLoading(false)
+    }
+  }
+
+  // Client-side conversion: no API call, no token usage.
+  const convertPreviousGeneralToItNews = () => {
+    const sourceHtml = lastGeneralHtml || (lastGeneratedType === 'general' ? html : '')
+    const sourceTopic = lastGeneralTopic || topic
+
+    if (!sourceHtml.trim()) {
+      setError('먼저 기본 블로그를 생성한 뒤 변환해주세요.')
+      return
+    }
+
+    try {
+      setTransforming(true)
+      const converted = convertGeneralHtmlToItNews(sourceHtml, sourceTopic)
+      setHtml(converted)
+      setTokens(0)
+      setError('')
+      showToast('이전 기본 블로그 내용을 IT정보/뉴스 형식으로 변환했습니다. (토큰 사용 없음)', 'success')
+    } catch {
+      setError('이전 내용을 변환하지 못했습니다. 먼저 기본 블로그를 다시 생성해 주세요.')
+    } finally {
+      setTransforming(false)
     }
   }
 
@@ -922,11 +1213,31 @@ export default function Generator() {
           )}
 
           {/* Generate button */}
-          <div className="flex justify-end">
+          <div className="flex justify-end gap-2">
+            {blogType === 'it-news' && (
+              <button
+                type="button"
+                onClick={convertPreviousGeneralToItNews}
+                disabled={loading || transforming}
+                className="flex items-center gap-2 px-4 py-3 rounded-xl border border-sky-800 bg-gradient-to-r from-sky-950/80 to-blue-900/60 text-sky-200 text-sm font-semibold hover:from-sky-900/80 hover:to-blue-800/60 disabled:opacity-60 disabled:cursor-not-allowed transition-all duration-200"
+              >
+                {transforming ? (
+                  <>
+                    <span className="w-4 h-4 border-2 border-sky-200/30 border-t-sky-100 rounded-full animate-spin flex-shrink-0" />
+                    변환 중...
+                  </>
+                ) : (
+                  <>
+                    <span>↺</span>
+                    이전내용 변환
+                  </>
+                )}
+              </button>
+            )}
             <button
               type="button"
               onClick={() => void generate()}
-              disabled={loading || cooldown > 0}
+              disabled={loading || transforming || cooldown > 0}
               className="btn-pulse flex items-center gap-2.5 px-7 py-3 bg-gradient-to-r from-red-600 to-rose-500 hover:from-red-500 hover:to-rose-400 disabled:from-zinc-800 disabled:to-zinc-800 disabled:text-zinc-600 disabled:cursor-not-allowed text-white text-sm font-bold rounded-xl transition-all duration-200 shadow-lg shadow-red-900/30 active:scale-[0.98]"
             >
               {loading ? (
