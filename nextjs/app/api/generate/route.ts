@@ -37,6 +37,25 @@ interface GenerationResult {
 
 type SystemPrompt = string
 
+const MIN_BODY_TEXT_LENGTH = 1000
+
+function stripHtmlToText(html: string): string {
+  return html
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function getBodyTextLength(html: string): number {
+  return stripHtmlToText(html).length
+}
+
 // ── Tavily web search (text only) ────────────────────────────────────────────
 async function searchWeb(topic: string): Promise<SearchResult> {
   try {
@@ -258,25 +277,39 @@ export async function POST(req: NextRequest) {
       ? buildCelebrityPrompt(celebrity, tone, imageCount, searchText, promptImages, preferredImages)
       : buildUserPrompt(sanitized, tone, length, searchText, promptImages)
 
-    // Route to the correct provider
-    let result: GenerationResult
-    switch (provider) {
-      case 'gemini':
-        result = await generateWithGemini(modelName, systemPrompt, userPrompt)
-        break
-      case 'openrouter':
-        result = await generateWithOpenRouter(modelName, systemPrompt, userPrompt)
-        break
-      case 'groq':
-      default:
-        result = await generateWithGroq(modelName, systemPrompt, userPrompt)
-        break
+    const generateByProvider = async (prompt: string): Promise<GenerationResult> => {
+      switch (provider) {
+        case 'gemini':
+          return generateWithGemini(modelName, systemPrompt, prompt)
+        case 'openrouter':
+          return generateWithOpenRouter(modelName, systemPrompt, prompt)
+        case 'groq':
+        default:
+          return generateWithGroq(modelName, systemPrompt, prompt)
+      }
+    }
+
+    let result = await generateByProvider(userPrompt)
+    if (getBodyTextLength(result.html) < MIN_BODY_TEXT_LENGTH) {
+      const retryPrompt = `${userPrompt}\n\n[분량 보강 재요청]\n직전 응답의 본문 텍스트가 짧았습니다. HTML 태그를 제외한 본문 텍스트를 최소 ${MIN_BODY_TEXT_LENGTH}자 이상으로 늘려서 다시 작성하세요. 섹션 순서는 그대로 유지하고, 내용 밀도를 높여 주세요.`
+      const retryResult = await generateByProvider(retryPrompt)
+      result = {
+        html: retryResult.html,
+        totalTokens: result.totalTokens + retryResult.totalTokens,
+      }
     }
 
     if (!result.html) {
       return NextResponse.json(
         { error: 'AI 응답을 받지 못했습니다. 다시 시도해주세요.' },
         { status: 500 },
+      )
+    }
+
+    if (getBodyTextLength(result.html) < MIN_BODY_TEXT_LENGTH) {
+      return NextResponse.json(
+        { error: `생성된 글 본문이 너무 짧습니다. 최소 ${MIN_BODY_TEXT_LENGTH}자 이상으로 다시 시도해주세요.` },
+        { status: 422 },
       )
     }
 

@@ -170,8 +170,8 @@ export function buildUserPrompt(
 ): string {
   const lengthGuide =
     length === 'long'
-      ? '각 섹션을 풍부하게 작성하여 전체 콘텐츠가 2000자 이상이 되도록 하세요.'
-      : '각 섹션에 충분한 내용을 포함하여 전체 콘텐츠가 1200자 이상이 되도록 하세요.'
+      ? '각 섹션을 풍부하게 작성하여 본문 텍스트가 2000자 이상이 되도록 하세요.'
+      : '각 섹션에 충분한 내용을 포함하여 본문 텍스트가 1000자 이상이 되도록 하세요.'
 
   const searchSection = searchData
     ? `\n\n══════════════════════════════════════════
@@ -202,6 +202,7 @@ ${searchImages.map((img, i) =>
 위 주제로 Tistory 블로그 포스트용 HTML을 생성해주세요.
 
 필수 체크리스트:
+✓ HTML 태그를 제외한 본문 텍스트가 최소 1000자 이상
 ✓ 모든 섹션(①~⑪) 순서 그대로 포함
 ✓ ts-stat-cards의 각 카드에 반드시 실제 큰 숫자/퍼센트 표시 (예: "87%", "3배", "#1")
 ✓ 검색된 이미지 URL이 있으면 Unsplash 대신 그 URL을 우선 사용
@@ -720,7 +721,7 @@ Rules:
 1. Output ONLY HTML. The first character must be "<style>".
 2. Use CSS class names prefixed with "ts-".
 3. Write in Korean.
-4. Keep it concise and readable (about 700~1300 chars body text).
+4. Keep it readable with sufficient detail (at least 1000 chars body text).
 5. Avoid rumors or unverified claims. Use neutral and factual tone.
 6. For images, use provided URLs first. If not enough, fill with picsum.photos only.
 7. Include 3 to 10 images total.
@@ -775,6 +776,7 @@ export function buildCelebrityPrompt(
 요청:
 - "${safeName}"의 간단 소개형 블로그 글을 HTML로 작성
 - 독자가 빠르게 이해할 수 있게 핵심 정보 위주로 구성
+- HTML 태그를 제외한 본문 텍스트는 최소 1000자 이상
 - 이미지 갤러리는 총 ${targetImageCount}장으로 구성
 - 인물 사진은 얼굴이 잘리지 않게 구성하고, 세로 사진도 자연스럽게 보이도록 처리
 - 이미지 영역에서는 background-image cover 스타일보다 img 태그 + object-fit: contain 방식을 우선 사용
@@ -784,6 +786,7 @@ ${searchSection}${selectedSection}${imageSection}
 
 체크리스트:
 ✓ 첫 글자는 <style>
+✓ HTML 태그 제외 본문 텍스트 최소 1000자
 ✓ 이미지 정확히 ${targetImageCount}장
 ${selectedImages?.length ? `✓ 사용자가 선택한 이미지 ${Math.min(selectedImages.length, targetImageCount)}장을 반드시 우선 포함` : ''}
 ✓ 얼굴, 머리 윗부분, 턱선이 잘리지 않도록 표시
