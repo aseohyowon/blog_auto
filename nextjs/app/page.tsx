@@ -1,5 +1,5 @@
-import Generator from '@/components/Generator'
+import GeneratorNoSSR from '@/components/GeneratorNoSSR'
 
 export default function Home() {
-  return <Generator />
+  return <GeneratorNoSSR />
 }

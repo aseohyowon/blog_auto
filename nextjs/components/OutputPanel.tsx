@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { ToastType } from './Toast'
 
 interface Props {
@@ -13,11 +13,115 @@ interface Props {
 
 type Tab = 'source' | 'preview'
 
+type GhostStatus = 'draft' | 'published'
+
+interface GhostPostResult {
+  id: string
+  title: string
+  slug: string
+  url: string
+  status: GhostStatus
+  adminUrl: string
+}
+
+function stripHtmlToText(rawHtml: string): string {
+  return rawHtml
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function parseTagInput(value: string): string[] {
+  const seen = new Set<string>()
+  const tags: string[] = []
+
+  for (const raw of value.split(/[\n,]/)) {
+    const tag = raw.replace(/^#/, '').trim().slice(0, 40)
+    if (!tag) continue
+    const key = tag.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    tags.push(tag)
+    if (tags.length >= 20) break
+  }
+
+  return tags
+}
+
+function extractGhostDefaults(rawHtml: string, topic?: string): { title: string; excerpt: string; tags: string[] } {
+  const parser = new DOMParser()
+  const doc = parser.parseFromString(rawHtml, 'text/html')
+
+  const title =
+    doc.querySelector('h1')?.textContent?.trim() ||
+    doc.querySelector('h2')?.textContent?.trim() ||
+    topic?.trim() ||
+    'AI 생성 블로그 글'
+
+  const description = doc.querySelector('meta[name="description"]')?.getAttribute('content')?.trim() || ''
+  const firstParagraph = doc.querySelector('p')?.textContent?.trim() || ''
+  const excerptSource = description || firstParagraph || stripHtmlToText(rawHtml)
+  const excerpt = excerptSource.slice(0, 300)
+
+  const classTagTexts = Array.from(doc.querySelectorAll('[class*="tag"]'))
+    .map((node) => (node.textContent || '').replace(/^#/, '').trim())
+    .filter(Boolean)
+
+  const hashtagMatches = stripHtmlToText(rawHtml).match(/#([A-Za-z0-9_가-힣-]{2,30})/g) || []
+  const normalizedHashtags = hashtagMatches.map((text) => text.replace(/^#/, '').trim())
+
+  const merged = [...classTagTexts, ...normalizedHashtags]
+  const seen = new Set<string>()
+  const tags: string[] = []
+
+  for (const tag of merged) {
+    const key = tag.toLowerCase()
+    if (!tag || seen.has(key)) continue
+    seen.add(key)
+    tags.push(tag)
+    if (tags.length >= 8) break
+  }
+
+  return { title, excerpt, tags }
+}
+
 export default function OutputPanel({ html, loading, tokens, topic, showToast }: Props) {
   const [tab,    setTab]    = useState<Tab>('source')
   const [copied, setCopied] = useState(false)
   const [tags, setTags] = useState<string[]>([])
   const [tagsLoading, setTagsLoading] = useState(false)
+  const [ghostTitle, setGhostTitle] = useState('')
+  const [ghostExcerpt, setGhostExcerpt] = useState('')
+  const [ghostTagsInput, setGhostTagsInput] = useState('')
+  const [ghostUploadingStatus, setGhostUploadingStatus] = useState<GhostStatus | null>(null)
+  const [ghostError, setGhostError] = useState('')
+  const [ghostResult, setGhostResult] = useState<GhostPostResult | null>(null)
+
+  useEffect(() => {
+    if (!html) {
+      setGhostTitle('')
+      setGhostExcerpt('')
+      setGhostTagsInput('')
+      setGhostError('')
+      setGhostResult(null)
+      setGhostUploadingStatus(null)
+      return
+    }
+
+    const defaults = extractGhostDefaults(html, topic)
+    setGhostTitle(defaults.title)
+    setGhostExcerpt(defaults.excerpt)
+    setGhostTagsInput(defaults.tags.join(', '))
+    setGhostError('')
+    setGhostResult(null)
+    setGhostUploadingStatus(null)
+  }, [html, topic])
 
   const copy = async () => {
     if (!html) return
@@ -72,6 +176,50 @@ export default function OutputPanel({ html, loading, tokens, topic, showToast }:
       showToast('태그 추천 중 오류가 발생했습니다.', 'error')
     } finally {
       setTagsLoading(false)
+    }
+  }
+
+  const uploadToGhost = async (status: GhostStatus) => {
+    if (!html) return
+    const title = ghostTitle.trim()
+    if (!title) {
+      setGhostError('Ghost 업로드용 제목을 입력해주세요.')
+      return
+    }
+
+    setGhostUploadingStatus(status)
+    setGhostError('')
+    setGhostResult(null)
+
+    try {
+      const res = await fetch('/api/ghost/posts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title,
+          html,
+          excerpt: ghostExcerpt.trim(),
+          tags: parseTagInput(ghostTagsInput),
+          status,
+        }),
+      })
+
+      const data = (await res.json()) as { error?: string; post?: GhostPostResult }
+      if (!res.ok || !data.post) {
+        throw new Error(data.error || 'Ghost 업로드 중 오류가 발생했습니다.')
+      }
+
+      setGhostResult(data.post)
+      showToast(
+        status === 'published' ? 'Ghost에 즉시 발행되었습니다.' : 'Ghost에 Draft로 저장되었습니다.',
+        'success',
+      )
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Ghost 업로드 중 오류가 발생했습니다.'
+      setGhostError(message)
+      showToast(message, 'error')
+    } finally {
+      setGhostUploadingStatus(null)
     }
   }
 
@@ -228,6 +376,81 @@ export default function OutputPanel({ html, loading, tokens, topic, showToast }:
           ))}
         </div>
       )}
+
+      <div className="px-4 py-4 border-b border-zinc-800 bg-zinc-950/60 flex flex-col gap-3">
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="text-sm font-semibold text-zinc-200">Ghost 업로드</h3>
+          {tags.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setGhostTagsInput(tags.join(', '))}
+              className="text-[11px] px-2.5 py-1 rounded-lg border border-zinc-700 bg-zinc-900 text-zinc-300 hover:border-red-600 hover:text-red-300 transition-colors"
+            >
+              추천 태그 반영
+            </button>
+          )}
+        </div>
+
+        <input
+          type="text"
+          value={ghostTitle}
+          onChange={(e) => setGhostTitle(e.target.value)}
+          placeholder="Ghost 제목"
+          className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 outline-none focus:border-red-600/60"
+        />
+
+        <textarea
+          value={ghostExcerpt}
+          onChange={(e) => setGhostExcerpt(e.target.value.slice(0, 300))}
+          placeholder="요약(선택, 최대 300자)"
+          rows={2}
+          className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 outline-none focus:border-red-600/60 resize-none"
+        />
+
+        <input
+          type="text"
+          value={ghostTagsInput}
+          onChange={(e) => setGhostTagsInput(e.target.value)}
+          placeholder="태그 (쉼표로 구분) 예: AI, 블로그자동화, ollama"
+          className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 outline-none focus:border-red-600/60"
+        />
+
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void uploadToGhost('draft')}
+            disabled={ghostUploadingStatus !== null}
+            className="px-3.5 py-2 rounded-xl border border-zinc-700 bg-zinc-900 text-zinc-200 text-xs font-semibold hover:border-red-600 hover:text-red-300 disabled:opacity-60"
+          >
+            {ghostUploadingStatus === 'draft' ? 'Draft 저장 중...' : 'Ghost에 Draft 저장'}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => void uploadToGhost('published')}
+            disabled={ghostUploadingStatus !== null}
+            className="px-3.5 py-2 rounded-xl border border-red-700/60 bg-red-900/30 text-red-200 text-xs font-semibold hover:bg-red-900/45 disabled:opacity-60"
+          >
+            {ghostUploadingStatus === 'published' ? '발행 중...' : 'Ghost에 바로 발행'}
+          </button>
+        </div>
+
+        {ghostError && (
+          <p className="text-xs text-red-400">{ghostError}</p>
+        )}
+
+        {ghostResult && (
+          <div className="rounded-xl border border-emerald-800/40 bg-emerald-950/20 px-3 py-2 text-xs text-emerald-300 flex flex-col gap-1">
+            <span>업로드 성공: {ghostResult.title}</span>
+            <a href={ghostResult.url} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 text-emerald-200">
+              공개 URL 열기
+            </a>
+            <a href={ghostResult.adminUrl} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 text-emerald-200">
+              Ghost 에디터 열기
+            </a>
+          </div>
+        )}
+      </div>
 
       {/* Source panel */}
       {tab === 'source' && (

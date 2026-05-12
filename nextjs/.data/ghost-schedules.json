@@ -1,0 +1,78 @@
+{
+  "schedules": [
+    {
+      "id": "mp271k0n-gt2s3d",
+      "runAt": 1778565600000,
+      "status": "pending",
+      "provider": "groq",
+      "model": "llama-3.3-70b-versatile",
+      "tone": "정보 전달형",
+      "length": "medium",
+      "blogType": "general",
+      "ghostStatus": "published",
+      "category": "IT·테크",
+      "categories": [
+        "IT·테크",
+        "여행",
+        "음식·맛집",
+        "재테크",
+        "건강·운동",
+        "자기계발",
+        "리뷰",
+        "이슈·트렌드"
+      ],
+      "categoryIndex": 0,
+      "startTime": "15:00",
+      "intervalHours": 1,
+      "repeat": true,
+      "repeatIntervalMinutes": 15,
+      "titlePrefix": "",
+      "useRandomKeyword": true,
+      "createdAt": 1778563930776,
+      "updatedAt": 1778563930776,
+      "lastError": "",
+      "result": null
+    },
+    {
+      "id": "mp26x57c-p39jv7",
+      "runAt": 1778630400000,
+      "status": "pending",
+      "provider": "groq",
+      "model": "llama-3.3-70b-versatile",
+      "tone": "정보 전달형",
+      "length": "medium",
+      "blogType": "general",
+      "ghostStatus": "published",
+      "category": "IT·테크",
+      "categories": [
+        "IT·테크",
+        "여행",
+        "음식·맛집",
+        "재테크",
+        "건강·운동",
+        "자기계발",
+        "리뷰",
+        "이슈·트렌드"
+      ],
+      "categoryIndex": 0,
+      "weekdays": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "timeOfDay": "09:00",
+      "repeat": true,
+      "repeatIntervalMinutes": 15,
+      "titlePrefix": "",
+      "useRandomKeyword": true,
+      "createdAt": 1778563724952,
+      "updatedAt": 1778563724952,
+      "lastError": "",
+      "result": null
+    }
+  ]
+}

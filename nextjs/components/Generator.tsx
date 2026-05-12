@@ -61,6 +61,31 @@ const CELEBRITY_OPTIONS = [
   '손흥민',
 ]
 
+const SCHEDULE_CATEGORIES = [
+  'IT·테크',
+  '여행',
+  '음식·맛집',
+  '재테크',
+  '건강·운동',
+  '자기계발',
+  '리뷰',
+  '이슈·트렌드',
+]
+
+interface GhostScheduleItem {
+  id: string
+  runAt: number
+  status: string
+  category: string
+  categories: string[]
+  intervalHours: number
+  ghostStatus: string
+  provider: string
+  model: string
+  startTime?: string
+  repeat?: boolean
+}
+
 interface ModelOption {
   value: string
   label: string
@@ -84,6 +109,15 @@ const PROVIDERS: Provider[] = [
     models: [
       { value: 'llama-3.3-70b-versatile', label: 'Llama 3.3 70B', sub: '고품질' },
       { value: 'llama-3.1-8b-instant',    label: 'Llama 3.1 8B',  sub: '초고속' },
+    ],
+  },
+  {
+    id: 'ollama',
+    name: 'Local Ollama',
+    icon: '🦙',
+    description: 'gemma4:e2b · 로컬',
+    models: [
+      { value: 'gemma4:e2b', label: 'gemma4:e2b', sub: '로컬 실행' },
     ],
   },
   {
@@ -392,6 +426,8 @@ export default function Generator() {
   const [html,        setHtml]        = useState('')
   const [loading,     setLoading]     = useState(false)
   const [error,       setError]       = useState('')
+  const [ollamaStatus, setOllamaStatus] = useState('')
+  const [ollamaChecking, setOllamaChecking] = useState(false)
   const [tokens,      setTokens]      = useState<number | null>(null)
   const [lastGeneratedType, setLastGeneratedType] = useState<BlogType | null>(null)
   const [lastGeneralTopic, setLastGeneralTopic] = useState('')
@@ -404,6 +440,15 @@ export default function Generator() {
   const [keywords,    setKeywords]    = useState<string[]>([])
   const [kwLoading,   setKwLoading]   = useState(false)
   const [kwCategory,  setKwCategory]  = useState('전체')
+  const [ghostScheduleStartTime, setGhostScheduleStartTime] = useState('09:00')
+  const [ghostScheduleIntervalHours, setGhostScheduleIntervalHours] = useState(24)
+  const [ghostScheduleStatus, setGhostScheduleStatus] = useState<'draft' | 'published'>('published')
+  const [ghostScheduleCategories, setGhostScheduleCategories] = useState<string[]>(['IT·테크'])
+  const [ghostScheduleSaving, setGhostScheduleSaving] = useState(false)
+  const [ghostScheduleMessage, setGhostScheduleMessage] = useState('')
+  const [showScheduleList, setShowScheduleList] = useState(false)
+  const [scheduleList, setScheduleList] = useState<GhostScheduleItem[]>([])
+  const [scheduleListLoading, setScheduleListLoading] = useState(false)
 
   const textareaRef   = useRef<HTMLTextAreaElement>(null)
   const toastTimer    = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -433,7 +478,46 @@ export default function Generator() {
     setProvider(id)
     const prov = PROVIDERS.find(p => p.id === id)
     if (prov) setModel(prov.models[0].value)
+    setOllamaStatus(id === 'ollama' ? 'Ollama 연결 상태를 확인 중입니다.' : '')
   }
+
+  const checkOllamaConnection = useCallback(async (manual = false) => {
+    setOllamaChecking(true)
+    try {
+      const res = await fetch('/api/ollama/tags')
+      const data = await res.json() as {
+        message?: string
+        error?: string
+        hasRequiredModel?: boolean
+        requiredModel?: string
+        models?: Array<{ name?: string }>
+      }
+
+      if (!res.ok) {
+        const message = data.error ?? data.message ?? 'Ollama 연결에 실패했습니다.'
+        setOllamaStatus(message)
+        if (manual) setError(message)
+        return
+      }
+
+      if (data.hasRequiredModel) {
+        const message = `${data.requiredModel ?? 'gemma4:e2b'} 모델 연결됨`
+        setOllamaStatus(message)
+        setError('')
+        return
+      }
+
+      const message = data.error ?? 'gemma4:e2b 모델이 설치되어 있지 않습니다. ollama pull gemma4:e2b 명령어로 설치해주세요.'
+      setOllamaStatus(message)
+      if (manual) setError(message)
+    } catch {
+      const message = 'Ollama가 실행 중인지 확인해주세요. Ollama 앱을 실행하거나 ollama serve 명령어를 실행하세요.'
+      setOllamaStatus(message)
+      if (manual) setError(message)
+    } finally {
+      setOllamaChecking(false)
+    }
+  }, [])
 
   const fetchKeywords = useCallback(async (cat?: string) => {
     const category = cat ?? kwCategory
@@ -454,11 +538,106 @@ export default function Generator() {
     void fetchKeywords(cat)
   }
 
+  const toggleScheduleCategory = (category: string) => {
+    setGhostScheduleCategories((prev) => {
+      if (prev.includes(category)) {
+        const next = prev.filter((item) => item !== category)
+        return next.length > 0 ? next : prev
+      }
+      return [...prev, category]
+    })
+  }
+
+  const saveGhostSchedule = async () => {
+    if (!ghostScheduleStartTime) {
+      setGhostScheduleMessage('예약 시간을 선택해주세요.')
+      return
+    }
+
+    if (!ghostScheduleIntervalHours || ghostScheduleIntervalHours < 1) {
+      setGhostScheduleMessage('몇 시간 간격인지 입력해주세요.')
+      return
+    }
+
+    setGhostScheduleSaving(true)
+    setGhostScheduleMessage('')
+
+    try {
+      const res = await fetch('/api/ghost/schedule', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          startTime: ghostScheduleStartTime,
+          intervalHours: ghostScheduleIntervalHours,
+          provider,
+          model,
+          tone,
+          length,
+          blogType: 'general',
+          ghostStatus: ghostScheduleStatus,
+          categories: ghostScheduleCategories,
+          repeat: true,
+          useRandomKeyword: true,
+        }),
+      })
+
+      const data = (await res.json()) as { error?: string; schedule?: { id?: string; runAt?: number } }
+      if (!res.ok || !data.schedule) {
+        throw new Error(data.error ?? '예약 저장에 실패했습니다.')
+      }
+
+      const scheduledAt = data.schedule.runAt ? new Date(data.schedule.runAt).toLocaleString('ko-KR') : '계산됨'
+      setGhostScheduleMessage(`예약이 저장되었습니다. 첫 실행 시각: ${scheduledAt}`)
+      showToast('Ghost 예약이 저장되었습니다.', 'success')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '예약 저장 중 오류가 발생했습니다.'
+      setGhostScheduleMessage(message)
+      showToast(message, 'error')
+    } finally {
+      setGhostScheduleSaving(false)
+    }
+  }
+
+  const fetchScheduleList = async () => {
+    setScheduleListLoading(true)
+    try {
+      const res = await fetch('/api/ghost/schedule')
+      const data = (await res.json()) as { schedules?: GhostScheduleItem[] }
+      setScheduleList(data.schedules ?? [])
+    } catch {
+      showToast('예약 목록을 불러오지 못했습니다.', 'error')
+    } finally {
+      setScheduleListLoading(false)
+    }
+  }
+
+  const deleteSchedule = async (id: string) => {
+    try {
+      const res = await fetch(`/api/ghost/schedule?id=${encodeURIComponent(id)}`, { method: 'DELETE' })
+      if (!res.ok) {
+        const data = (await res.json()) as { error?: string }
+        throw new Error(data.error ?? '삭제 실패')
+      }
+      setScheduleList((prev) => prev.filter((s) => s.id !== id))
+      showToast('예약이 삭제되었습니다.', 'success')
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : '삭제 중 오류가 발생했습니다.', 'error')
+    }
+  }
+
   // Auto-fetch keywords on mount / blog type change
   useEffect(() => {
     if (blogType === 'celebrity') return
     void fetchKeywords()
   }, [fetchKeywords, blogType])
+
+  useEffect(() => {
+    if (provider === 'ollama') {
+      void checkOllamaConnection(false)
+    } else {
+      setOllamaStatus('')
+    }
+  }, [provider, checkOllamaConnection])
 
   const fetchSafeImages = useCallback(async (name?: string, count?: number) => {
     const query = (name ?? celebrity).trim()
@@ -752,7 +931,7 @@ export default function Generator() {
           <span className="text-[10px] font-semibold text-zinc-500 uppercase tracking-widest">
             API 프로바이더
           </span>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             {PROVIDERS.map(p => (
               <button
                 key={p.id}
@@ -777,6 +956,21 @@ export default function Generator() {
               </button>
             ))}
           </div>
+          {provider === 'ollama' && (
+            <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-zinc-800 bg-zinc-950/70 px-4 py-3">
+              <button
+                type="button"
+                onClick={() => void checkOllamaConnection(true)}
+                disabled={ollamaChecking}
+                className="inline-flex items-center gap-2 rounded-xl border border-zinc-700 bg-zinc-900 px-3.5 py-2 text-xs font-semibold text-zinc-200 hover:border-red-600 hover:text-red-300 disabled:opacity-60"
+              >
+                {ollamaChecking ? '확인 중...' : 'Ollama 연결 확인'}
+              </button>
+              <p className="text-xs text-zinc-400">
+                {ollamaStatus || '로컬 Ollama 상태를 확인할 수 있습니다.'}
+              </p>
+            </div>
+          )}
         </section>
 
         {/* ── Settings row ─────────────────────────────────────────────── */}
@@ -1025,6 +1219,182 @@ export default function Generator() {
             )}
           </div>
         </section>
+        )}
+
+        {/* ── Ghost schedule ─────────────────────────────────────────── */}
+        <section aria-label="Ghost 예약 발행" className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-5 flex flex-col gap-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-bold text-zinc-100">Ghost 자동 발행 예약</h2>
+              <p className="text-xs text-zinc-500 mt-1">지정한 시간에 추천키워드를 랜덤 선택해서 생성 후 Ghost에 자동 발행합니다.</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setGhostScheduleStatus('draft')}
+                className={`px-3 py-2 rounded-xl border text-xs font-semibold transition-colors ${ghostScheduleStatus === 'draft' ? 'border-red-600 bg-red-600/10 text-red-300' : 'border-zinc-800 bg-zinc-900 text-zinc-500 hover:border-zinc-700 hover:text-zinc-300'}`}
+              >
+                Draft
+              </button>
+              <button
+                type="button"
+                onClick={() => setGhostScheduleStatus('published')}
+                className={`px-3 py-2 rounded-xl border text-xs font-semibold transition-colors ${ghostScheduleStatus === 'published' ? 'border-red-600 bg-red-600/10 text-red-300' : 'border-zinc-800 bg-zinc-900 text-zinc-500 hover:border-zinc-700 hover:text-zinc-300'}`}
+              >
+                Publish
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <label className="flex flex-col gap-1.5">
+              <span className="text-[10px] font-semibold text-zinc-500 uppercase tracking-widest">시작 시간</span>
+              <input
+                type="time"
+                value={ghostScheduleStartTime}
+                onChange={(e) => setGhostScheduleStartTime(e.target.value)}
+                className="bg-zinc-900 border border-zinc-800 text-zinc-200 text-sm rounded-xl px-3 py-2.5 outline-none focus:border-red-600 focus:ring-1 focus:ring-red-600/20"
+              />
+            </label>
+
+            <label className="flex flex-col gap-1.5 md:col-span-2">
+              <span className="text-[10px] font-semibold text-zinc-500 uppercase tracking-widest">몇 시간 간격</span>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={ghostScheduleIntervalHours}
+                  onChange={(e) => setGhostScheduleIntervalHours(Math.max(1, Number(e.target.value) || 1))}
+                  className="w-full bg-zinc-900 border border-zinc-800 text-zinc-200 text-sm rounded-xl px-3 py-2.5 outline-none focus:border-red-600 focus:ring-1 focus:ring-red-600/20"
+                />
+                <span className="text-sm text-zinc-500 whitespace-nowrap">시간마다 실행</span>
+              </div>
+            </label>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <span className="text-[10px] font-semibold text-zinc-500 uppercase tracking-widest">카테고리 순환</span>
+            <div className="flex flex-wrap gap-2">
+              {SCHEDULE_CATEGORIES.map((category) => {
+                const active = ghostScheduleCategories.includes(category)
+                return (
+                  <button
+                    key={category}
+                    type="button"
+                    onClick={() => toggleScheduleCategory(category)}
+                    className={`px-3 py-1.5 rounded-full border text-[12px] font-medium transition-colors ${active ? 'border-red-600 bg-red-600/10 text-red-300' : 'border-zinc-800 bg-zinc-900/70 text-zinc-500 hover:border-zinc-700 hover:text-zinc-300'}`}
+                  >
+                    {category}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={() => void saveGhostSchedule()}
+              disabled={ghostScheduleSaving}
+              className="px-4 py-2.5 rounded-xl border border-red-700/60 bg-red-900/30 text-red-200 text-sm font-semibold hover:bg-red-900/45 disabled:opacity-60"
+            >
+              {ghostScheduleSaving ? '예약 저장 중...' : 'Ghost 예약 저장'}
+            </button>
+            <button
+              type="button"
+              onClick={() => { void fetchScheduleList(); setShowScheduleList(true) }}
+              className="px-4 py-2.5 rounded-xl border border-zinc-700 bg-zinc-800/50 text-zinc-300 text-sm font-semibold hover:bg-zinc-800 transition-colors"
+            >
+              예약 목록
+            </button>
+            <p className="text-xs text-zinc-500">
+              시작 시간에 첫 실행 후, 입력한 시간 간격마다 지정한 카테고리들 중 하나를 랜덤으로 골라 자동 생성 후 Ghost로 보냅니다.
+            </p>
+          </div>
+
+          {ghostScheduleMessage && (
+            <div className="rounded-xl border border-zinc-800 bg-black/20 px-3 py-2 text-xs text-zinc-300">
+              {ghostScheduleMessage}
+            </div>
+          )}
+        </section>
+
+        {/* Ghost 예약 목록 모달 */}
+        {showScheduleList && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={() => setShowScheduleList(false)}>
+            <div className="w-full max-w-2xl max-h-[80vh] flex flex-col rounded-2xl border border-zinc-700 bg-zinc-950 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800">
+                <h3 className="text-sm font-bold text-zinc-100">Ghost 예약 목록</h3>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void fetchScheduleList()}
+                    disabled={scheduleListLoading}
+                    className="text-xs text-zinc-400 hover:text-zinc-200 transition-colors disabled:opacity-50"
+                  >
+                    {scheduleListLoading ? '로딩 중...' : '새로고침'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowScheduleList(false)}
+                    className="text-zinc-500 hover:text-zinc-200 transition-colors"
+                    aria-label="닫기"
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M18 6 6 18M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              <div className="overflow-y-auto flex-1 px-5 py-3">
+                {scheduleListLoading && scheduleList.length === 0 ? (
+                  <p className="text-xs text-zinc-500 py-6 text-center">로딩 중...</p>
+                ) : scheduleList.length === 0 ? (
+                  <p className="text-xs text-zinc-500 py-6 text-center">등록된 예약이 없습니다.</p>
+                ) : (
+                  <ul className="flex flex-col gap-2">
+                    {scheduleList.map((item) => (
+                      <li key={item.id} className="rounded-xl border border-zinc-800 bg-zinc-900/60 px-4 py-3 flex items-start justify-between gap-3">
+                        <div className="flex flex-col gap-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className={`inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full ${item.status === 'pending' ? 'bg-yellow-900/40 text-yellow-400 border border-yellow-800' : item.status === 'running' ? 'bg-blue-900/40 text-blue-400 border border-blue-800' : 'bg-zinc-800 text-zinc-400 border border-zinc-700'}`}>
+                              {item.status === 'pending' ? '대기중' : item.status === 'running' ? '실행중' : item.status}
+                            </span>
+                            <span className={`inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full ${item.ghostStatus === 'published' ? 'bg-green-900/40 text-green-400 border border-green-800' : 'bg-zinc-800 text-zinc-400 border border-zinc-700'}`}>
+                              {item.ghostStatus === 'published' ? 'Publish' : 'Draft'}
+                            </span>
+                          </div>
+                          <p className="text-xs text-zinc-200 font-medium truncate">
+                            {item.startTime ? `${item.startTime} 시작` : ''} / {item.intervalHours}시간 간격
+                          </p>
+                          <p className="text-[11px] text-zinc-400 truncate">
+                            카테고리: {item.categories?.join(', ') || item.category}
+                          </p>
+                          <p className="text-[11px] text-zinc-500">
+                            다음 실행: {new Date(item.runAt).toLocaleString('ko-KR')}
+                          </p>
+                          <p className="text-[11px] text-zinc-600">
+                            {item.provider} / {item.model}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => void deleteSchedule(item.id)}
+                          className="shrink-0 text-zinc-600 hover:text-red-400 transition-colors mt-0.5"
+                          aria-label="예약 삭제"
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" />
+                          </svg>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          </div>
         )}
 
         {blogType === 'celebrity' && (

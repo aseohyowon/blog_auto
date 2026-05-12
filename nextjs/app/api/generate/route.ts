@@ -5,6 +5,12 @@ import { tavily } from '@tavily/core'
 import { searchSafeImages } from '@/lib/safeImageSearch'
 import { searchStockImages } from '@/lib/stockImageSearch'
 import {
+  generateWithOllama,
+  OLLAMA_MODEL_MISSING_MESSAGE,
+  OLLAMA_NOT_RUNNING_MESSAGE,
+  OLLAMA_SLOW_MESSAGE,
+} from '@/services/ollamaService'
+import {
   SYSTEM_PROMPT,
   REVIEW_SYSTEM_PROMPT,
   TRAVEL_SYSTEM_PROMPT,
@@ -54,6 +60,15 @@ function stripHtmlToText(html: string): string {
 
 function getBodyTextLength(html: string): number {
   return stripHtmlToText(html).length
+}
+
+function buildLengthRetryPrompt(basePrompt: string, currentLength: number, attempt: number): string {
+  const missing = Math.max(0, MIN_BODY_TEXT_LENGTH - currentLength)
+  const strictLine = attempt >= 2
+    ? '이번 응답은 반드시 11개 섹션을 모두 유지하고, 각 핵심 섹션에 최소 2개 이상의 문단을 작성하세요.'
+    : '섹션 순서는 그대로 유지하고, 본문 설명과 근거를 더 자세히 보강하세요.'
+
+  return `${basePrompt}\n\n[분량 보강 재요청 #${attempt}]\n직전 응답의 본문 텍스트 길이는 ${currentLength}자였습니다. 최소 ${MIN_BODY_TEXT_LENGTH}자 기준까지 ${missing}자 이상 부족합니다.\n${strictLine}\nHTML 태그를 제외한 본문 텍스트를 최소 ${MIN_BODY_TEXT_LENGTH}자 이상으로 늘려서 다시 작성하세요.`
 }
 
 // ── Tavily web search (text only) ────────────────────────────────────────────
@@ -279,6 +294,12 @@ export async function POST(req: NextRequest) {
 
     const generateByProvider = async (prompt: string): Promise<GenerationResult> => {
       switch (provider) {
+        case 'ollama':
+          return generateWithOllama({
+            model: modelName,
+            systemPrompt,
+            userPrompt: prompt,
+          })
         case 'gemini':
           return generateWithGemini(modelName, systemPrompt, prompt)
         case 'openrouter':
@@ -290,13 +311,17 @@ export async function POST(req: NextRequest) {
     }
 
     let result = await generateByProvider(userPrompt)
-    if (getBodyTextLength(result.html) < MIN_BODY_TEXT_LENGTH) {
-      const retryPrompt = `${userPrompt}\n\n[분량 보강 재요청]\n직전 응답의 본문 텍스트가 짧았습니다. HTML 태그를 제외한 본문 텍스트를 최소 ${MIN_BODY_TEXT_LENGTH}자 이상으로 늘려서 다시 작성하세요. 섹션 순서는 그대로 유지하고, 내용 밀도를 높여 주세요.`
+    let bodyLength = getBodyTextLength(result.html)
+
+    const MAX_LENGTH_RETRIES = 3
+    for (let attempt = 1; attempt <= MAX_LENGTH_RETRIES && bodyLength < MIN_BODY_TEXT_LENGTH; attempt += 1) {
+      const retryPrompt = buildLengthRetryPrompt(userPrompt, bodyLength, attempt)
       const retryResult = await generateByProvider(retryPrompt)
       result = {
         html: retryResult.html,
         totalTokens: result.totalTokens + retryResult.totalTokens,
       }
+      bodyLength = getBodyTextLength(result.html)
     }
 
     if (!result.html) {
@@ -306,9 +331,9 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    if (getBodyTextLength(result.html) < MIN_BODY_TEXT_LENGTH) {
+    if (bodyLength < MIN_BODY_TEXT_LENGTH) {
       return NextResponse.json(
-        { error: `생성된 글 본문이 너무 짧습니다. 최소 ${MIN_BODY_TEXT_LENGTH}자 이상으로 다시 시도해주세요.` },
+        { error: `생성된 글 본문이 너무 짧습니다. 현재 ${bodyLength}자이며 최소 ${MIN_BODY_TEXT_LENGTH}자 이상이어야 합니다. 다시 시도해주세요.` },
         { status: 422 },
       )
     }
@@ -327,6 +352,15 @@ export async function POST(req: NextRequest) {
       const msg    = ('message' in err ? String((err as { message: unknown }).message) : '')
       const status = 'status' in err ? Number((err as { status: unknown }).status) : 0
       const msgLow = msg.toLowerCase()
+
+      if (status === 503 || msg === OLLAMA_NOT_RUNNING_MESSAGE)
+        return NextResponse.json({ error: OLLAMA_NOT_RUNNING_MESSAGE }, { status: 503 })
+
+      if (status === 404 || msg === OLLAMA_MODEL_MISSING_MESSAGE)
+        return NextResponse.json({ error: OLLAMA_MODEL_MISSING_MESSAGE }, { status: 404 })
+
+      if (status === 504 || msg === OLLAMA_SLOW_MESSAGE)
+        return NextResponse.json({ error: OLLAMA_SLOW_MESSAGE }, { status: 504 })
 
       if (status === 401 || msgLow.includes('api key') || msgLow.includes('invalid_api_key'))
         return NextResponse.json({ error: 'API 키가 유효하지 않습니다. .env 파일을 확인해주세요.' }, { status: 401 })
