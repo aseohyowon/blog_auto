@@ -4,7 +4,7 @@ const GENERATE_TIMEOUT_MS = 600000
 const TAGS_TIMEOUT_MS = 10000
 
 const OLLAMA_NOT_RUNNING_MESSAGE = 'Ollama가 실행 중인지 확인해주세요. Ollama 앱을 실행하거나 ollama serve 명령어를 실행하세요.'
-const OLLAMA_MODEL_MISSING_MESSAGE = 'gemma4:e2b 모델이 설치되어 있지 않습니다. ollama pull gemma4:e2b 명령어로 설치해주세요.'
+const OLLAMA_MODEL_MISSING_MESSAGE = '선택한 Ollama 모델이 설치되어 있지 않습니다. ollama pull <모델명> 으로 설치해주세요.'
 const OLLAMA_SLOW_MESSAGE = '로컬 모델 응답이 느릴 수 있습니다. 잠시 후 다시 시도해주세요.'
 
 async function parseOllamaStream(response) {
@@ -130,10 +130,20 @@ export async function ensureOllamaModel() {
   return status
 }
 
+export async function ensureSelectedOllamaModel(modelName) {
+  const status = await listOllamaModels()
+  const targetModel = (typeof modelName === 'string' && modelName.trim()) ? modelName.trim() : DEFAULT_MODEL
+  const exists = status.models.some((item) => item.name === targetModel || item.model === targetModel)
+  if (!exists) {
+    throw createError(`선택한 Ollama 모델(${targetModel})이 설치되어 있지 않습니다. ollama pull ${targetModel} 명령어로 설치해주세요.`, 404)
+  }
+  return status
+}
+
 export async function generateWithOllama({ systemPrompt, userPrompt, model }) {
   const selectedModel = model || DEFAULT_MODEL
 
-  await ensureOllamaModel()
+  await ensureSelectedOllamaModel(selectedModel)
 
   const prompt = `${systemPrompt}\n\n${userPrompt}`
   const response = await fetchWithTimeout(

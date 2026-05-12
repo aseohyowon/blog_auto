@@ -357,7 +357,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: OLLAMA_NOT_RUNNING_MESSAGE }, { status: 503 })
 
       if (status === 404 || msg === OLLAMA_MODEL_MISSING_MESSAGE)
-        return NextResponse.json({ error: OLLAMA_MODEL_MISSING_MESSAGE }, { status: 404 })
+        return NextResponse.json({ error: msg || OLLAMA_MODEL_MISSING_MESSAGE }, { status: 404 })
 
       if (status === 504 || msg === OLLAMA_SLOW_MESSAGE)
         return NextResponse.json({ error: OLLAMA_SLOW_MESSAGE }, { status: 504 })

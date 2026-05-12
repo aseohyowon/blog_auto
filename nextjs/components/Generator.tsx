@@ -92,6 +92,12 @@ interface ModelOption {
   sub: string
 }
 
+function formatModelSize(size: number | null | undefined): string {
+  if (typeof size !== 'number' || Number.isNaN(size) || size <= 0) return '로컬 모델'
+  const gb = size / (1024 ** 3)
+  return `${gb.toFixed(1)}GB`
+}
+
 interface Provider {
   id: string
   name: string
@@ -115,10 +121,8 @@ const PROVIDERS: Provider[] = [
     id: 'ollama',
     name: 'Local Ollama',
     icon: '🦙',
-    description: 'gemma4:e2b · 로컬',
-    models: [
-      { value: 'gemma4:e2b', label: 'gemma4:e2b', sub: '로컬 실행' },
-    ],
+    description: '로컬 모델 선택',
+    models: [],
   },
   {
     id: 'gemini',
@@ -449,6 +453,7 @@ export default function Generator() {
   const [showScheduleList, setShowScheduleList] = useState(false)
   const [scheduleList, setScheduleList] = useState<GhostScheduleItem[]>([])
   const [scheduleListLoading, setScheduleListLoading] = useState(false)
+  const [ollamaModels, setOllamaModels] = useState<ModelOption[]>([])
 
   const textareaRef   = useRef<HTMLTextAreaElement>(null)
   const toastTimer    = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -473,11 +478,21 @@ export default function Generator() {
   const { used, remaining, isPremium, canGenerate, recordUsage, unlockPremium, activateDemoPremium } = useUsage()
 
   const currentProvider = PROVIDERS.find(p => p.id === provider) ?? PROVIDERS[0]
+  const currentModelOptions = provider === 'ollama' ? ollamaModels : currentProvider.models
 
   const handleProviderChange = (id: string) => {
     setProvider(id)
     const prov = PROVIDERS.find(p => p.id === id)
-    if (prov) setModel(prov.models[0].value)
+    if (id === 'ollama') {
+      const localFirst = ollamaModels[0]?.value
+      if (localFirst) {
+        setModel(localFirst)
+      } else if (prov?.models[0]) {
+        setModel(prov.models[0].value)
+      }
+    } else if (prov?.models[0]) {
+      setModel(prov.models[0].value)
+    }
     setOllamaStatus(id === 'ollama' ? 'Ollama 연결 상태를 확인 중입니다.' : '')
   }
 
@@ -488,36 +503,52 @@ export default function Generator() {
       const data = await res.json() as {
         message?: string
         error?: string
-        hasRequiredModel?: boolean
-        requiredModel?: string
-        models?: Array<{ name?: string }>
+        models?: Array<{ name?: string; model?: string; size?: number | null }>
       }
 
       if (!res.ok) {
         const message = data.error ?? data.message ?? 'Ollama 연결에 실패했습니다.'
         setOllamaStatus(message)
+        setOllamaModels([])
         if (manual) setError(message)
         return
       }
 
-      if (data.hasRequiredModel) {
-        const message = `${data.requiredModel ?? 'gemma4:e2b'} 모델 연결됨`
-        setOllamaStatus(message)
+      const nextModels = (data.models ?? [])
+        .map((item) => {
+          const value = item.name?.trim() || item.model?.trim() || ''
+          if (!value) return null
+          return {
+            value,
+            label: value,
+            sub: formatModelSize(item.size),
+          }
+        })
+        .filter((item): item is ModelOption => item !== null)
+
+      setOllamaModels(nextModels)
+
+      if (nextModels.length > 0) {
+        if (!nextModels.some((item) => item.value === model)) {
+          setModel(nextModels[0].value)
+        }
+        setOllamaStatus(`${nextModels.length}개 로컬 모델을 찾았습니다. 사용 모델을 선택하세요.`)
         setError('')
         return
       }
 
-      const message = data.error ?? 'gemma4:e2b 모델이 설치되어 있지 않습니다. ollama pull gemma4:e2b 명령어로 설치해주세요.'
+      const message = data.error ?? '설치된 Ollama 모델이 없습니다. ollama pull <모델명> 으로 먼저 내려받아주세요.'
       setOllamaStatus(message)
       if (manual) setError(message)
     } catch {
       const message = 'Ollama가 실행 중인지 확인해주세요. Ollama 앱을 실행하거나 ollama serve 명령어를 실행하세요.'
       setOllamaStatus(message)
+      setOllamaModels([])
       if (manual) setError(message)
     } finally {
       setOllamaChecking(false)
     }
-  }, [])
+  }, [model])
 
   const fetchKeywords = useCallback(async (cat?: string) => {
     const category = cat ?? kwCategory
@@ -1133,23 +1164,29 @@ export default function Generator() {
             <span className="text-[10px] font-semibold text-zinc-500 uppercase tracking-widest">
               모델
             </span>
-            <div className="flex gap-2">
-              {currentProvider.models.map(m => (
-                <button
-                  key={m.value}
-                  type="button"
-                  onClick={() => setModel(m.value)}
-                  className={`flex flex-col items-start px-4 py-2 rounded-xl border text-sm transition-all ${
-                    model === m.value
-                      ? 'border-red-600 bg-red-600/10 text-red-400'
-                      : 'border-zinc-800 bg-zinc-900 text-zinc-500 hover:border-zinc-700 hover:text-zinc-300'
-                  }`}
-                >
-                  <span className="font-semibold text-[12px]">{m.label}</span>
-                  <span className="text-[10px] opacity-70">{m.sub}</span>
-                </button>
-              ))}
-            </div>
+            {currentModelOptions.length === 0 ? (
+              <p className="text-xs text-zinc-500 rounded-xl border border-zinc-800 bg-zinc-900 px-3 py-2">
+                사용 가능한 모델이 없습니다. Ollama 연결 확인 후 모델을 내려받아주세요.
+              </p>
+            ) : (
+              <div className="flex gap-2 flex-wrap">
+                {currentModelOptions.map(m => (
+                  <button
+                    key={m.value}
+                    type="button"
+                    onClick={() => setModel(m.value)}
+                    className={`flex flex-col items-start px-4 py-2 rounded-xl border text-sm transition-all ${
+                      model === m.value
+                        ? 'border-red-600 bg-red-600/10 text-red-400'
+                        : 'border-zinc-800 bg-zinc-900 text-zinc-500 hover:border-zinc-700 hover:text-zinc-300'
+                    }`}
+                  >
+                    <span className="font-semibold text-[12px]">{m.label}</span>
+                    <span className="text-[10px] opacity-70">{m.sub}</span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
         </section>
