@@ -92,7 +92,28 @@ function normalizeTags(tags) {
   return list
 }
 
-export async function createGhostPost({ title, html, excerpt, tags, status }) {
+function normalizeFeatureImageUrl(value) {
+  if (typeof value !== 'string') return ''
+  const trimmed = value.trim()
+  if (!trimmed) return ''
+
+  try {
+    const parsed = new URL(trimmed)
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return ''
+    return parsed.toString()
+  } catch {
+    return ''
+  }
+}
+
+function extractFirstImageUrlFromHtml(html) {
+  if (typeof html !== 'string' || !html) return ''
+  const matches = html.match(/<img[^>]+src=["']([^"']+)["']/i)
+  const src = matches?.[1] ?? ''
+  return normalizeFeatureImageUrl(src)
+}
+
+export async function createGhostPost({ title, html, excerpt, tags, featureImageUrl, status }) {
   const ghostUrl = normalizeUrl(process.env.GHOST_URL)
   if (!ghostUrl) {
     throw createError(GHOST_URL_MISSING_MESSAGE, 500)
@@ -124,6 +145,12 @@ export async function createGhostPost({ title, html, excerpt, tags, status }) {
 
   if (trimmedExcerpt) {
     payloadPost.custom_excerpt = trimmedExcerpt.slice(0, 300)
+  }
+
+  const normalizedFeatureImageUrl =
+    normalizeFeatureImageUrl(featureImageUrl) || extractFirstImageUrlFromHtml(trimmedHtml)
+  if (normalizedFeatureImageUrl) {
+    payloadPost.feature_image = normalizedFeatureImageUrl
   }
 
   const normalizedTags = normalizeTags(tags)

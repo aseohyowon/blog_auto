@@ -54,7 +54,7 @@ function parseTagInput(value: string): string[] {
   return tags
 }
 
-function extractGhostDefaults(rawHtml: string, topic?: string): { title: string; excerpt: string; tags: string[] } {
+function extractGhostDefaults(rawHtml: string, topic?: string): { title: string; excerpt: string; tags: string[]; featureImageUrl: string } {
   const parser = new DOMParser()
   const doc = parser.parseFromString(rawHtml, 'text/html')
 
@@ -88,7 +88,13 @@ function extractGhostDefaults(rawHtml: string, topic?: string): { title: string;
     if (tags.length >= 8) break
   }
 
-  return { title, excerpt, tags }
+  const featureImageUrl =
+    Array.from(doc.querySelectorAll('img'))
+      .map((img) => (img.getAttribute('src') ?? '').trim())
+      .find((src) => /^https?:\/\//i.test(src))
+    ?? ''
+
+  return { title, excerpt, tags, featureImageUrl }
 }
 
 export default function OutputPanel({ html, loading, tokens, topic, showToast }: Props) {
@@ -99,6 +105,7 @@ export default function OutputPanel({ html, loading, tokens, topic, showToast }:
   const [ghostTitle, setGhostTitle] = useState('')
   const [ghostExcerpt, setGhostExcerpt] = useState('')
   const [ghostTagsInput, setGhostTagsInput] = useState('')
+  const [ghostFeatureImageUrl, setGhostFeatureImageUrl] = useState('')
   const [ghostUploadingStatus, setGhostUploadingStatus] = useState<GhostStatus | null>(null)
   const [ghostError, setGhostError] = useState('')
   const [ghostResult, setGhostResult] = useState<GhostPostResult | null>(null)
@@ -108,6 +115,7 @@ export default function OutputPanel({ html, loading, tokens, topic, showToast }:
       setGhostTitle('')
       setGhostExcerpt('')
       setGhostTagsInput('')
+      setGhostFeatureImageUrl('')
       setGhostError('')
       setGhostResult(null)
       setGhostUploadingStatus(null)
@@ -118,6 +126,7 @@ export default function OutputPanel({ html, loading, tokens, topic, showToast }:
     setGhostTitle(defaults.title)
     setGhostExcerpt(defaults.excerpt)
     setGhostTagsInput(defaults.tags.join(', '))
+    setGhostFeatureImageUrl(defaults.featureImageUrl)
     setGhostError('')
     setGhostResult(null)
     setGhostUploadingStatus(null)
@@ -200,6 +209,7 @@ export default function OutputPanel({ html, loading, tokens, topic, showToast }:
           html,
           excerpt: ghostExcerpt.trim(),
           tags: parseTagInput(ghostTagsInput),
+          featureImageUrl: ghostFeatureImageUrl.trim(),
           status,
         }),
       })
@@ -412,6 +422,14 @@ export default function OutputPanel({ html, loading, tokens, topic, showToast }:
           value={ghostTagsInput}
           onChange={(e) => setGhostTagsInput(e.target.value)}
           placeholder="태그 (쉼표로 구분) 예: AI, 블로그자동화, ollama"
+          className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 outline-none focus:border-red-600/60"
+        />
+
+        <input
+          type="url"
+          value={ghostFeatureImageUrl}
+          onChange={(e) => setGhostFeatureImageUrl(e.target.value)}
+          placeholder="썸네일 URL (선택) 예: https://example.com/thumbnail.jpg"
           className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 outline-none focus:border-red-600/60"
         />
 

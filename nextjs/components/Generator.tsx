@@ -811,27 +811,45 @@ export default function Generator() {
           title: image.title,
         }))
 
-      const res = await fetch('/api/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          topic: trimmed,
-          tone,
-          length,
-          model,
-          provider,
-          blogType,
-          celebrity,
-          imageCount,
-          selectedImages,
-        }),
-      })
+      let res: Response
+      try {
+        res = await fetch('/api/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            topic: trimmed,
+            tone,
+            length,
+            model,
+            provider,
+            blogType,
+            celebrity,
+            imageCount,
+            selectedImages,
+          }),
+        })
+      } catch (networkError) {
+        if (networkError instanceof TypeError) {
+          throw new Error('서버 연결에 실패했습니다. Next.js 서버가 실행 중인지 확인 후 다시 시도해주세요.')
+        }
+        throw networkError
+      }
 
-      const data = (await res.json()) as {
+      let data: {
         html?: string
         error?: string
         retryAfter?: number
         usage?: { total_tokens?: number }
+      }
+      try {
+        data = (await res.json()) as {
+          html?: string
+          error?: string
+          retryAfter?: number
+          usage?: { total_tokens?: number }
+        }
+      } catch {
+        throw new Error('서버 응답을 읽지 못했습니다. 서버 로그를 확인해주세요.')
       }
 
       if (!res.ok) {

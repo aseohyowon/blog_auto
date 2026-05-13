@@ -2,7 +2,7 @@
   "schedules": [
     {
       "id": "mp271k0n-gt2s3d",
-      "runAt": 1778565600000,
+      "runAt": 1778616894438,
       "status": "pending",
       "provider": "groq",
       "model": "llama-3.3-70b-versatile",
@@ -21,7 +21,7 @@
         "리뷰",
         "이슈·트렌드"
       ],
-      "categoryIndex": 0,
+      "categoryIndex": 3,
       "startTime": "15:00",
       "intervalHours": 1,
       "repeat": true,
@@ -29,9 +29,16 @@
       "titlePrefix": "",
       "useRandomKeyword": true,
       "createdAt": 1778563930776,
-      "updatedAt": 1778563930776,
+      "updatedAt": 1778613294438,
       "lastError": "",
-      "result": null
+      "result": {
+        "id": "6a037c324f9bb900016c56cb",
+        "title": "부작용 없는 식단 방법: 건강한 다이어트를 위한 핵심 전략",
+        "slug": "bujagyong-eobsneun-sigdan-bangbeob-geonganghan-daieoteureul-wihan-haegsim-jeonryag",
+        "url": "https://minicloud.shop/bujagyong-eobsneun-sigdan-bangbeob-geonganghan-daieoteureul-wihan-haegsim-jeonryag/",
+        "status": "published",
+        "adminUrl": "https://minicloud.shop/ghost/#/editor/post/6a037c324f9bb900016c56cb"
+      }
     },
     {
       "id": "mp26x57c-p39jv7",

@@ -37,6 +37,7 @@ export async function POST(req: NextRequest) {
       html?: unknown
       excerpt?: unknown
       tags?: unknown
+      featureImageUrl?: unknown
       status?: unknown
     }
 
@@ -44,6 +45,7 @@ export async function POST(req: NextRequest) {
     const html = typeof body.html === 'string' ? body.html : ''
     const excerpt = typeof body.excerpt === 'string' ? body.excerpt.trim() : ''
     const tags = toTagList(body.tags)
+    const featureImageUrl = typeof body.featureImageUrl === 'string' ? body.featureImageUrl.trim() : ''
     const status: GhostStatus = body.status === 'published' ? 'published' : 'draft'
 
     if (!title) {
@@ -59,6 +61,7 @@ export async function POST(req: NextRequest) {
       html,
       excerpt,
       tags,
+      featureImageUrl,
       status,
     })
 
