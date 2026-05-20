@@ -371,35 +371,103 @@ async function searchYoutubeThumbnails(query: string, limit: number): Promise<Ar
 }
 
 // ── Stable Diffusion prompt builder ─────────────────────────────────────────
-// 한국어 주제를 SD에서 잘 동작하는 영어 프롬프트로 변환합니다.
-function buildSdPrompt(query: string): string {
-  const normalized = query.trim().replace(/\s+/g, ' ')
-  const base = [
-    normalized,
+// 한국어 주제를 SD 모델이 이해하는 영어 프롬프트로 변환합니다.
+// 키워드 매핑으로 주제에 맞는 장면을 묘사하고, 비 연예인 포스트는 사람/얼굴을 제외합니다.
+function buildSdPrompt(query: string, blogType?: string): string {
+  const isCelebrity = blogType === 'celebrity'
+  const q = query.trim()
+
+  let subject: string
+  let styleWords: string[]
+
+  if (isCelebrity) {
+    // 연예인 포스트: 인물 중심 프롬프트
+    const cleanName = q.replace(/\s*(소개|프로필|최근|활동|사진|모음|이미지|관련|뉴스)\s*/g, ' ').trim()
+    subject = `${cleanName}, celebrity portrait, professional photo shoot`
+    styleWords = ['studio lighting', 'high fashion editorial']
+  } else if (/침구|이불|베개|매트리스|침대|수면|숙면|잠/.test(q)) {
+    subject = 'cozy modern bedroom, luxury white bedding, soft pillows, comfortable mattress, warm ambient lighting'
+    styleWords = ['interior photography', 'hygge aesthetic', 'warm tones']
+  } else if (/여행|관광|휴가|여름.*여행|여행지|해외여행|국내여행|배낭|힐링/.test(q)) {
+    subject = 'beautiful travel destination, scenic landscape, vacation resort, blue sky, ocean or mountains'
+    styleWords = ['travel photography', 'golden hour lighting', 'wide angle']
+  } else if (/음식|요리|레시피|맛집|식당|카페|커피|디저트|베이킹|빵|케이크/.test(q)) {
+    subject = 'delicious gourmet food dish, restaurant plating, fresh ingredients, beautifully styled'
+    styleWords = ['food photography', 'soft natural lighting', 'overhead shot']
+  } else if (/AI|인공지능|머신러닝|딥러닝|기술|테크|IT|소프트웨어|앱|개발|프로그래밍/.test(q)) {
+    subject = 'artificial intelligence technology concept, glowing digital neural network, futuristic interface, circuit board'
+    styleWords = ['tech visualization', 'blue neon abstract', 'digital art aesthetic']
+  } else if (/건강|운동|피트니스|다이어트|헬스|요가|명상|웰니스/.test(q)) {
+    subject = 'healthy lifestyle wellness concept, yoga mat, green smoothie bowl, sport equipment, nature background'
+    styleWords = ['lifestyle photography', 'bright airy', 'clean health aesthetic']
+  } else if (/투자|주식|재테크|금융|경제|비트코인|암호화폐|코인|펀드/.test(q)) {
+    subject = 'financial investment concept, stock market charts on screen, modern business analytics dashboard'
+    styleWords = ['business photography', 'corporate professional', 'blue tones']
+  } else if (/부동산|집|아파트|인테리어|가구|거실|주방|홈/.test(q)) {
+    subject = 'modern apartment interior design, contemporary minimalist living room, natural light'
+    styleWords = ['interior photography', 'architecture photography', 'bright natural light']
+  } else if (/패션|옷|의류|코디|스타일|쇼핑|가방|신발/.test(q)) {
+    subject = 'stylish fashion clothing flat lay, accessories and outfit, clean white background'
+    styleWords = ['fashion photography', 'product photography', 'editorial style']
+  } else if (/반려동물|강아지|고양이|펫|애완/.test(q)) {
+    subject = 'cute pet dog or cat playing, adorable animal close-up, soft background'
+    styleWords = ['pet photography', 'natural lighting', 'bokeh background']
+  } else if (/자동차|차|드라이브|SUV|세단/.test(q)) {
+    subject = 'sleek modern car on scenic road, automotive photography, dramatic lighting'
+    styleWords = ['automotive photography', 'motion blur', 'cinematic']
+  } else if (/책|독서|공부|교육|학습|도서|문학/.test(q)) {
+    subject = 'open book on wooden desk, cozy reading nook, warm library interior, study materials'
+    styleWords = ['still life photography', 'warm library aesthetic']
+  } else if (/환경|자연|생태|지구|숲|바다|산/.test(q)) {
+    subject = 'beautiful nature landscape, lush forest river mountains sunrise, peaceful scenery'
+    styleWords = ['nature photography', 'landscape photography', 'golden hour']
+  } else if (/뷰티|화장품|스킨케어|메이크업|향수/.test(q)) {
+    subject = 'luxury skincare beauty products arranged elegantly, cosmetics flat lay'
+    styleWords = ['product photography', 'pastel tones', 'beauty editorial']
+  } else {
+    // 일반 폴백: 오브젝트/컨셉 이미지 (얼굴 없이)
+    subject = 'clean editorial concept photo, professional product shot, abstract concept visualization'
+    styleWords = ['editorial photography', 'clean bright background', 'studio lighting']
+  }
+
+  const noPersonTokens = isCelebrity ? [] : ['no people', 'no faces', 'no portrait', 'no humans']
+
+  return [
+    subject,
+    ...styleWords,
     'high quality photo',
-    'editorial style',
-    'professional photography',
+    '8k ultra detailed',
     'sharp focus',
-    '8k resolution',
+    'professional lighting',
     'safe for work',
-    'no text',
+    ...noPersonTokens,
+    'no text overlay',
     'no watermark',
+    'no logo',
   ].join(', ')
-  return base
 }
 
-const SD_NEGATIVE_PROMPT = [
-  'nsfw', 'nude', 'explicit', 'violence', 'gore', 'text', 'watermark',
-  'logo', 'blurry', 'low quality', 'deformed', 'ugly', 'duplicate',
-].join(', ')
+function buildSdNegativePrompt(blogType?: string): string {
+  const base = [
+    'nsfw', 'nude', 'explicit', 'violence', 'gore',
+    'text', 'watermark', 'logo', 'signature',
+    'blurry', 'low quality', 'deformed', 'ugly', 'duplicate',
+    'bad anatomy', 'extra limbs', 'mutation', 'disfigured',
+  ]
+  const noFace = blogType !== 'celebrity'
+    ? ['person', 'people', 'human', 'face', 'portrait', 'hands', 'fingers', 'body parts']
+    : []
+  return [...base, ...noFace].join(', ')
+}
 
 // ── Stable Diffusion: ComfyUI (http://127.0.0.1:8188) ───────────────────────
 // ComfyUI uses async queue: POST /prompt → poll /history/{id} → GET /view
-async function generateWithLocalSD(query: string, sdModelOverride?: string): Promise<Array<Omit<ImageCandidate, 'relevanceScore'>>> {
+async function generateWithLocalSD(query: string, sdModelOverride?: string, blogType?: string): Promise<Array<Omit<ImageCandidate, 'relevanceScore'>>> {
   const baseUrl = (process.env.SD_COMFYUI_URL || '').replace(/\/$/, '')
   if (!baseUrl) return []
 
-  const positivePrompt = buildSdPrompt(query)
+  const positivePrompt = buildSdPrompt(query, blogType)
+  const negativePrompt = buildSdNegativePrompt(blogType)
   const width = Number(process.env.SD_WIDTH || 512)
   const height = Number(process.env.SD_HEIGHT || 512)
   const steps = Number(process.env.SD_STEPS || 10)
@@ -412,7 +480,7 @@ async function generateWithLocalSD(query: string, sdModelOverride?: string): Pro
     '4': { class_type: 'CheckpointLoaderSimple', inputs: { ckpt_name: model } },
     '5': { class_type: 'EmptyLatentImage', inputs: { width, height, batch_size: 1 } },
     '6': { class_type: 'CLIPTextEncode', inputs: { text: positivePrompt, clip: ['4', 1] } },
-    '7': { class_type: 'CLIPTextEncode', inputs: { text: SD_NEGATIVE_PROMPT, clip: ['4', 1] } },
+    '7': { class_type: 'CLIPTextEncode', inputs: { text: negativePrompt, clip: ['4', 1] } },
     '3': {
       class_type: 'KSampler',
       inputs: {
@@ -492,19 +560,20 @@ async function generateWithLocalSD(query: string, sdModelOverride?: string): Pro
 }
 
 // ── Stable Diffusion: StabilityAI cloud API ───────────────────────────────────
-async function generateWithStabilityAI(query: string): Promise<Array<Omit<ImageCandidate, 'relevanceScore'>>> {
+async function generateWithStabilityAI(query: string, blogType?: string): Promise<Array<Omit<ImageCandidate, 'relevanceScore'>>> {
   const apiKey = process.env.STABILITY_API_KEY
   if (!apiKey) return []
 
   const engine = process.env.STABILITY_ENGINE || 'stable-image/generate/core'
-  const prompt = buildSdPrompt(query)
+  const prompt = buildSdPrompt(query, blogType)
+  const negativePrompt = buildSdNegativePrompt(blogType)
   const width = Number(process.env.SD_WIDTH || 1344)
   const height = Number(process.env.SD_HEIGHT || 768)
 
   try {
     const formData = new FormData()
     formData.append('prompt', prompt)
-    formData.append('negative_prompt', SD_NEGATIVE_PROMPT)
+    formData.append('negative_prompt', negativePrompt)
     formData.append('aspect_ratio', '16:9')
     formData.append('output_format', 'webp')
     formData.append('width', String(width))
@@ -541,11 +610,11 @@ async function generateWithStabilityAI(query: string): Promise<Array<Omit<ImageC
 }
 
 // ── Combined AI image fallback (SD local → StabilityAI → OpenAI) ─────────────
-async function generateSdImage(query: string, sdModelOverride?: string): Promise<Array<Omit<ImageCandidate, 'relevanceScore'>>> {
-  const local = await generateWithLocalSD(query, sdModelOverride)
+async function generateSdImage(query: string, sdModelOverride?: string, blogType?: string): Promise<Array<Omit<ImageCandidate, 'relevanceScore'>>> {
+  const local = await generateWithLocalSD(query, sdModelOverride, blogType)
   if (local.length > 0) return local
 
-  const cloud = await generateWithStabilityAI(query)
+  const cloud = await generateWithStabilityAI(query, blogType)
   if (cloud.length > 0) return cloud
 
   return []
@@ -642,7 +711,7 @@ export async function resolveImagesForPost(options: ResolveImageOptions): Promis
   // with stock image fetching, then prefer SD results.
   const [fetched, earlySdImages] = await Promise.all([
     fetchProviderImages(topic, count + 4, issueTopic),
-    isOllama && sdComfyUrl ? generateSdImage(topic, options.sdModel) : Promise.resolve([]),
+    isOllama && sdComfyUrl ? generateSdImage(topic, options.sdModel, options.blogType) : Promise.resolve([]),
   ])
 
   const usedSet = await getUsedImageSet()
