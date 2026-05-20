@@ -30,7 +30,7 @@ For <img> tags and hero background-image:
     For hero: https://placehold.co/860x510/1a1a1a/555555?text=Topic
     For grid: https://placehold.co/600x450/1a1a1a/555555?text=Topic
 
-  RULE 3 — NEVER use unsplash.com, picsum.photos, or any random image service.
+  RULE 3 — NEVER use unapproved random image services. Use only provided URLs or placehold.co fallback.
   RULE 4 — NEVER make up or guess any image URL. Only use provided search images or placehold.co.
 
 ══════════════════════════════════════════
@@ -205,7 +205,7 @@ ${searchImages.map((img, i) =>
 ✓ HTML 태그를 제외한 본문 텍스트가 최소 1000자 이상
 ✓ 모든 섹션(①~⑪) 순서 그대로 포함
 ✓ ts-stat-cards의 각 카드에 반드시 실제 큰 숫자/퍼센트 표시 (예: "87%", "3배", "#1")
-✓ 검색된 이미지 URL이 있으면 Unsplash 대신 그 URL을 우선 사용
+✓ 검색된 이미지 URL이 있으면 제공된 URL을 최우선으로 사용
 ✓ SEO: 제목, 소제목, 본문에 "${topic}" 키워드 자연스럽게 포함
 ✓ 첫 글자가 <style>이어야 함 — 다른 텍스트 절대 금지
 ${searchData ? '✓ 검색 결과의 수치/사실을 그대로 사용 — 임의 생성 금지' : ''}
@@ -231,9 +231,9 @@ ABSOLUTE RULES
 ══════════════════════════════════════════
 IMAGES — RULES
 ══════════════════════════════════════════
-  RULE 1 — If provided image URLs exist, USE THEM FIRST (Pexels/Pixabay licensed).
+  RULE 1 — If provided image URLs exist, USE THEM FIRST (licensed/public sources).
   RULE 2 — For missing images use: https://placehold.co/{W}x{H}/1a1a1a/555555?text={KEYWORD}
-  RULE 3 — NEVER use unsplash.com, picsum.photos, or fabricated URLs.
+  RULE 3 — NEVER use unapproved random image sites or fabricated URLs.
 
 ══════════════════════════════════════════
 REQUIRED SECTIONS (exact order)
@@ -383,9 +383,9 @@ ABSOLUTE RULES
 ══════════════════════════════════════════
 IMAGES — RULES
 ══════════════════════════════════════════
-  RULE 1 — If provided image URLs exist, USE THEM FIRST (Pexels/Pixabay licensed).
+  RULE 1 — If provided image URLs exist, USE THEM FIRST (licensed/public sources).
   RULE 2 — For missing images use: https://placehold.co/{W}x{H}/0d1a1a/2a5252?text={KEYWORD}
-  RULE 3 — NEVER use unsplash.com, picsum.photos, or fabricated URLs.
+  RULE 3 — NEVER use unapproved random image sites or fabricated URLs.
 
 ══════════════════════════════════════════
 REQUIRED SECTIONS (exact order)
@@ -546,9 +546,9 @@ ABSOLUTE RULES
 ══════════════════════════════════════════
 IMAGES — RULES
 ══════════════════════════════════════════
-  RULE 1 — If provided image URLs exist, USE THEM FIRST (Pexels/Pixabay licensed).
+  RULE 1 — If provided image URLs exist, USE THEM FIRST (licensed/public sources).
   RULE 2 — For missing images use: https://placehold.co/{W}x{H}/060d1a/1e3a5f?text={KEYWORD}
-  RULE 3 — NEVER use unsplash.com, picsum.photos, or fabricated URLs.
+  RULE 3 — NEVER use unapproved random image sites or fabricated URLs.
 
 ══════════════════════════════════════════
 REQUIRED SECTIONS (exact order)

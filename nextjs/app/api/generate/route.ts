@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import Groq from 'groq-sdk'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import { tavily } from '@tavily/core'
-import { searchSafeImages } from '@/lib/safeImageSearch'
-import { searchStockImages } from '@/lib/stockImageSearch'
+import { resolveImagesForPost, injectImageEnhancements } from '@/lib/imageService'
 import {
   generateWithOllama,
   OLLAMA_MODEL_MISSING_MESSAGE,
@@ -263,24 +262,18 @@ export async function POST(req: NextRequest) {
       : topic
     const sanitized = baseTopic.slice(0, 200)
     const { text: searchText } = await searchWeb(sanitized)
-    // Fetch stock images from Pexels/Pixabay (licensed, safe to use)
-    const stockImages = blogType !== 'celebrity'
-      ? (await searchStockImages(sanitized, imageCount)).map((img) => ({
-          url: img.url,
-          source: img.pageUrl,
-          title: img.title,
-        }))
-      : []
-    const safeImages = blogType === 'celebrity'
-      ? await searchSafeImages(celebrity, imageCount)
-      : []
+    const imageCandidates = await resolveImagesForPost({
+      topic: blogType === 'celebrity' ? celebrity : sanitized,
+      blogType,
+      count: imageCount,
+      preferredImages: selectedImages,
+    })
+    const promptImages = imageCandidates.map((img) => ({
+      url: img.url,
+      source: img.pageUrl,
+      title: img.title,
+    }))
     const preferredImages = selectedImages.slice(0, imageCount)
-    const fallbackSafeImages = safeImages
-      .map((img) => ({ url: img.imageUrl, source: img.pageUrl, title: img.title }))
-      .filter((img) => !preferredImages.some((selected) => selected.url === img.url))
-    const promptImages = blogType === 'celebrity'
-      ? [...preferredImages, ...fallbackSafeImages].slice(0, imageCount)
-      : stockImages
 
     const systemPrompt =
       blogType === 'celebrity' ? CELEBRITY_SYSTEM_PROMPT :
@@ -338,10 +331,12 @@ export async function POST(req: NextRequest) {
       )
     }
 
+    const enhancedHtml = injectImageEnhancements(result.html, imageCandidates)
+
     // Inject broken-image fallback script
-    const html = result.html.includes('</body>')
-      ? result.html.replace('</body>', BROKEN_IMAGE_SCRIPT + '\n</body>')
-      : result.html + BROKEN_IMAGE_SCRIPT
+    const html = enhancedHtml.includes('</body>')
+      ? enhancedHtml.replace('</body>', BROKEN_IMAGE_SCRIPT + '\n</body>')
+      : enhancedHtml + BROKEN_IMAGE_SCRIPT
 
     return NextResponse.json({ html, usage: { total_tokens: result.totalTokens } })
 
