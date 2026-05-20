@@ -771,34 +771,47 @@ export async function resolveImagesForPost(options: ResolveImageOptions): Promis
 export function injectImageEnhancements(html: string, images: ImageCandidate[]): string {
   if (!html.trim()) return html
 
-  let next = html.replace(/<img\b([^>]*)>/gi, (full, attrs) => {
+  // 기존 <img> 태그에 lazy loading / async decoding 추가
+  let next = html.replace(/<img\b([^>]*)>/gi, (_full, attrs) => {
     let patched = attrs as string
-    if (!/\sloading\s*=\s*['"][^'"]+['"]/i.test(patched)) patched += ' loading="lazy"'
-    if (!/\sdecoding\s*=\s*['"][^'"]+['"]/i.test(patched)) patched += ' decoding="async"'
+    if (!/\sloading\s*=\s*['"]/i.test(patched)) patched += ' loading="lazy"'
+    if (!/\sdecoding\s*=\s*['"]/i.test(patched)) patched += ' decoding="async"'
     return `<img${patched}>`
   })
 
+  // LLM이 이미지를 삽입하지 않은 경우, 문단 사이에 자연스럽게 주입
   const hasImage = /<img\b/i.test(next)
   if (!hasImage && images.length > 0) {
-    const gallery = images.slice(0, 2).map((img) => {
-      const isAiGenerated = img.provider === 'stable-diffusion' || img.provider === 'ai-generated'
-      const caption = isAiGenerated
-        ? `<figcaption>🎨 AI Generated</figcaption>`
-        : `<figcaption>📷 Source: <a href="${img.pageUrl}" target="_blank" rel="noopener">${img.sourceLabel}</a></figcaption>`
-      return `<figure><img src="${img.url}" alt="${img.title}" loading="lazy" decoding="async" />${caption}</figure>`
-    }).join('')
+    let imgIdx = 0
+    let blockCount = 0
+    const INJECT_EVERY = 2 // 블록 2개마다 이미지 1장 삽입
 
-    const block = `<section class="ts-auto-gallery"><h2>관련 이미지</h2>${gallery}</section>`
-    next = next.includes('</body>') ? next.replace('</body>', `${block}</body>`) : `${next}${block}`
+    next = next.replace(/<\/(p|h[2-4]|ul|ol|blockquote)>/gi, (closingTag) => {
+      blockCount++
+      if (blockCount % INJECT_EVERY === 0 && imgIdx < images.length) {
+        const img = images[imgIdx++]
+        const isAi = img.provider === 'stable-diffusion' || img.provider === 'ai-generated'
+        const captionHtml = isAi
+          ? `<figcaption style="text-align:center;font-size:0.8em;color:#999;margin-top:6px">🎨 AI Generated</figcaption>`
+          : `<figcaption style="text-align:center;font-size:0.8em;color:#999;margin-top:6px">📷 <a href="${img.pageUrl}" target="_blank" rel="noopener noreferrer" style="color:#999">${img.sourceLabel}</a></figcaption>`
+        const safeAlt = img.title.replace(/"/g, '&quot;')
+        const figure = `\n<figure style="margin:2em auto;text-align:center"><img src="${img.url}" alt="${safeAlt}" loading="lazy" decoding="async" style="max-width:100%;height:auto;border-radius:8px;display:block;margin:0 auto" />${captionHtml}</figure>\n`
+        return `${closingTag}${figure}`
+      }
+      return closingTag
+    })
   }
 
+  // 외부 이미지 출처만 숨김 표시 (AI 생성 이미지 제외)
   const sourceLines = images.slice(0, 6)
     .filter((img) => img.provider !== 'stable-diffusion' && img.provider !== 'ai-generated')
     .map((img) => `📷 Source: ${img.sourceLabel} (${img.pageUrl})`)
     .join('<br/>')
 
-  const sourceBlock = `<div class="ts-image-sources" style="display:none">${sourceLines}</div>`
-  next = next.includes('</body>') ? next.replace('</body>', `${sourceBlock}</body>`) : `${next}${sourceBlock}`
+  if (sourceLines) {
+    const sourceBlock = `<div class="ts-image-sources" style="display:none">${sourceLines}</div>`
+    next = next.includes('</body>') ? next.replace('</body>', `${sourceBlock}</body>`) : `${next}${sourceBlock}`
+  }
 
   return next
 }

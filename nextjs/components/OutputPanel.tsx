@@ -91,6 +91,13 @@ function extractGhostDefaults(rawHtml: string, topic?: string): { title: string;
   return { title, excerpt, tags }
 }
 
+function extractFirstImageSrc(rawHtml: string): string {
+  const match = rawHtml.match(/<img[^>]+\ssrc\s*=\s*["']([^"']+)["']/i)
+  const src = match?.[1]?.trim() || ''
+  if (/^https?:\/\//i.test(src) || /^data:image\//i.test(src)) return src
+  return ''
+}
+
 export default function OutputPanel({ html, loading, tokens, topic, showToast }: Props) {
   const [tab,    setTab]    = useState<Tab>('source')
   const [copied, setCopied] = useState(false)
@@ -201,6 +208,7 @@ export default function OutputPanel({ html, loading, tokens, topic, showToast }:
           excerpt: ghostExcerpt.trim(),
           tags: parseTagInput(ghostTagsInput),
           status,
+          featureImage: extractFirstImageSrc(html),
         }),
       })
 
