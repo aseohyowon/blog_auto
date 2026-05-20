@@ -779,27 +779,46 @@ export function injectImageEnhancements(html: string, images: ImageCandidate[]):
     return `<img${patched}>`
   })
 
-  // LLM이 이미지를 삽입하지 않은 경우, 문단 사이에 자연스럽게 주입
-  const hasImage = /<img\b/i.test(next)
-  if (!hasImage && images.length > 0) {
-    let imgIdx = 0
-    let blockCount = 0
-    const INJECT_EVERY = 2 // 블록 2개마다 이미지 1장 삽입
-
-    next = next.replace(/<\/(p|h[2-4]|ul|ol|blockquote)>/gi, (closingTag) => {
-      blockCount++
-      if (blockCount % INJECT_EVERY === 0 && imgIdx < images.length) {
-        const img = images[imgIdx++]
-        const isAi = img.provider === 'stable-diffusion' || img.provider === 'ai-generated'
-        const captionHtml = isAi
-          ? `<figcaption style="text-align:center;font-size:0.8em;color:#999;margin-top:6px">🎨 AI Generated</figcaption>`
-          : `<figcaption style="text-align:center;font-size:0.8em;color:#999;margin-top:6px">📷 <a href="${img.pageUrl}" target="_blank" rel="noopener noreferrer" style="color:#999">${img.sourceLabel}</a></figcaption>`
-        const safeAlt = img.title.replace(/"/g, '&quot;')
-        const figure = `\n<figure style="margin:2em auto;text-align:center"><img src="${img.url}" alt="${safeAlt}" loading="lazy" decoding="async" style="max-width:100%;height:auto;border-radius:8px;display:block;margin:0 auto" />${captionHtml}</figure>\n`
-        return `${closingTag}${figure}`
-      }
-      return closingTag
+  // SD/AI 이미지는 hasImage 여부와 무관하게 항상 본문 첫 단락 뒤에 주입
+  // (LLM이 stock 이미지를 HTML에 embed해도 SD 이미지가 반드시 노출되도록)
+  const originalHasImage = /<img\b/i.test(next)
+  const sdImages = images.filter(
+    (img) => img.provider === 'stable-diffusion' || img.provider === 'ai-generated',
+  )
+  if (sdImages.length > 0) {
+    let sdInjected = false
+    next = next.replace(/<\/(p|h[2-6])>/gi, (closingTag) => {
+      if (sdInjected) return closingTag
+      sdInjected = true
+      const img = sdImages[0]
+      const safeAlt = img.title.replace(/"/g, '&quot;')
+      const figure = `\n<figure style="margin:2em auto;text-align:center"><img src="${img.url}" alt="${safeAlt}" loading="lazy" decoding="async" style="max-width:100%;height:auto;border-radius:8px;display:block;margin:0 auto" /><figcaption style="text-align:center;font-size:0.8em;color:#999;margin-top:6px">🎨 AI Generated</figcaption></figure>\n`
+      return `${closingTag}${figure}`
     })
+  }
+
+  // LLM이 스톡 이미지를 넣지 않은 경우에만 스톡 이미지를 문단 사이에 주입
+  if (!originalHasImage) {
+    const stockImages = images.filter(
+      (img) => img.provider !== 'stable-diffusion' && img.provider !== 'ai-generated',
+    )
+    if (stockImages.length > 0) {
+      let imgIdx = 0
+      let blockCount = 0
+      const INJECT_EVERY = 2
+
+      next = next.replace(/<\/(p|h[2-4]|ul|ol|blockquote)>/gi, (closingTag) => {
+        blockCount++
+        if (blockCount % INJECT_EVERY === 0 && imgIdx < stockImages.length) {
+          const img = stockImages[imgIdx++]
+          const captionHtml = `<figcaption style="text-align:center;font-size:0.8em;color:#999;margin-top:6px">📷 <a href="${img.pageUrl}" target="_blank" rel="noopener noreferrer" style="color:#999">${img.sourceLabel}</a></figcaption>`
+          const safeAlt = img.title.replace(/"/g, '&quot;')
+          const figure = `\n<figure style="margin:2em auto;text-align:center"><img src="${img.url}" alt="${safeAlt}" loading="lazy" decoding="async" style="max-width:100%;height:auto;border-radius:8px;display:block;margin:0 auto" />${captionHtml}</figure>\n`
+          return `${closingTag}${figure}`
+        }
+        return closingTag
+      })
+    }
   }
 
   // 외부 이미지 출처만 숨김 표시 (AI 생성 이미지 제외)
