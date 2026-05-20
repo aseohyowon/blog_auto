@@ -780,15 +780,20 @@ export function injectImageEnhancements(html: string, images: ImageCandidate[]):
 
   const hasImage = /<img\b/i.test(next)
   if (!hasImage && images.length > 0) {
-    const gallery = images.slice(0, 2).map((img) => (
-      `<figure><img src="${img.url}" alt="${img.title}" loading="lazy" decoding="async" /><figcaption>📷 Source: <a href="${img.pageUrl}" target="_blank" rel="noopener">${img.sourceLabel}</a></figcaption></figure>`
-    )).join('')
+    const gallery = images.slice(0, 2).map((img) => {
+      const isAiGenerated = img.provider === 'stable-diffusion' || img.provider === 'ai-generated'
+      const caption = isAiGenerated
+        ? `<figcaption>🎨 AI Generated</figcaption>`
+        : `<figcaption>📷 Source: <a href="${img.pageUrl}" target="_blank" rel="noopener">${img.sourceLabel}</a></figcaption>`
+      return `<figure><img src="${img.url}" alt="${img.title}" loading="lazy" decoding="async" />${caption}</figure>`
+    }).join('')
 
     const block = `<section class="ts-auto-gallery"><h2>관련 이미지</h2>${gallery}</section>`
     next = next.includes('</body>') ? next.replace('</body>', `${block}</body>`) : `${next}${block}`
   }
 
   const sourceLines = images.slice(0, 6)
+    .filter((img) => img.provider !== 'stable-diffusion' && img.provider !== 'ai-generated')
     .map((img) => `📷 Source: ${img.sourceLabel} (${img.pageUrl})`)
     .join('<br/>')
 
