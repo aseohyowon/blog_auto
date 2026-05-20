@@ -21,6 +21,17 @@ function extractTitle(html: string, fallback: string): string {
   return raw.slice(0, 120) || fallback
 }
 
+function extractFirstImageUrl(html: string): string {
+  const imgTagMatch = html.match(/<img[^>]+>/i)
+  if (!imgTagMatch) return ''
+
+  const srcMatch = imgTagMatch[0].match(/\ssrc\s*=\s*['"]([^'"]+)['"]/i)
+  const src = srcMatch?.[1]?.trim() || ''
+  if (!src) return ''
+  if (/^https?:\/\//i.test(src)) return src
+  return ''
+}
+
 function selectRandom<T>(items: T[]): T | null {
   if (items.length === 0) return null
   return items[Math.floor(Math.random() * items.length)]
@@ -75,6 +86,7 @@ async function generatePost(schedule: any, topic: string) {
 
 async function publishToGhost(schedule: any, html: string, title: string, topic: string, category: string) {
   const tags = [category, topic, schedule.blogType || 'general']
+  const featureImage = extractFirstImageUrl(html)
   const res = await fetch(`${APP_BASE_URL}/api/ghost/posts`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -84,6 +96,7 @@ async function publishToGhost(schedule: any, html: string, title: string, topic:
       excerpt: stripHtml(html).slice(0, 300),
       tags,
       status: schedule.ghostStatus || 'draft',
+      featureImage,
     }),
   })
 

@@ -222,6 +222,7 @@ export async function POST(req: NextRequest) {
       celebrity?: unknown
       imageCount?: unknown
       selectedImages?: unknown
+      sdModel?: unknown
     }
 
     const topic     = typeof body.topic    === 'string' ? body.topic.trim()  : ''
@@ -229,6 +230,7 @@ export async function POST(req: NextRequest) {
     const length    = typeof body.length   === 'string' ? body.length        : 'medium'
     const modelName = typeof body.model    === 'string' ? body.model         : 'llama-3.3-70b-versatile'
     const provider  = typeof body.provider === 'string' ? body.provider      : 'groq'
+    const sdModel   = typeof body.sdModel  === 'string' ? body.sdModel.trim() : undefined
     const blogType  = (['celebrity', 'review', 'travel', 'it-news', 'general'] as const).includes(body.blogType as 'general')
       ? (body.blogType as 'general' | 'review' | 'travel' | 'it-news' | 'celebrity')
       : 'general' as const
@@ -267,6 +269,8 @@ export async function POST(req: NextRequest) {
       blogType,
       count: imageCount,
       preferredImages: selectedImages,
+      provider,
+      sdModel,
     })
     const promptImages = imageCandidates.map((img) => ({
       url: img.url,

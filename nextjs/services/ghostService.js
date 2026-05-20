@@ -92,28 +92,7 @@ function normalizeTags(tags) {
   return list
 }
 
-function normalizeFeatureImageUrl(value) {
-  if (typeof value !== 'string') return ''
-  const trimmed = value.trim()
-  if (!trimmed) return ''
-
-  try {
-    const parsed = new URL(trimmed)
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return ''
-    return parsed.toString()
-  } catch {
-    return ''
-  }
-}
-
-function extractFirstImageUrlFromHtml(html) {
-  if (typeof html !== 'string' || !html) return ''
-  const matches = html.match(/<img[^>]+src=["']([^"']+)["']/i)
-  const src = matches?.[1] ?? ''
-  return normalizeFeatureImageUrl(src)
-}
-
-export async function createGhostPost({ title, html, excerpt, tags, featureImageUrl, status }) {
+export async function createGhostPost({ title, html, excerpt, tags, status, featureImage }) {
   const ghostUrl = normalizeUrl(process.env.GHOST_URL)
   if (!ghostUrl) {
     throw createError(GHOST_URL_MISSING_MESSAGE, 500)
@@ -127,6 +106,7 @@ export async function createGhostPost({ title, html, excerpt, tags, featureImage
   const trimmedTitle = typeof title === 'string' ? title.trim() : ''
   const trimmedHtml = typeof html === 'string' ? html.trim() : ''
   const trimmedExcerpt = typeof excerpt === 'string' ? excerpt.trim() : ''
+  const trimmedFeatureImage = typeof featureImage === 'string' ? featureImage.trim() : ''
 
   if (!trimmedTitle) {
     throw createError('Ghost 업로드용 제목이 비어 있습니다.', 400)
@@ -147,15 +127,13 @@ export async function createGhostPost({ title, html, excerpt, tags, featureImage
     payloadPost.custom_excerpt = trimmedExcerpt.slice(0, 300)
   }
 
-  const normalizedFeatureImageUrl =
-    normalizeFeatureImageUrl(featureImageUrl) || extractFirstImageUrlFromHtml(trimmedHtml)
-  if (normalizedFeatureImageUrl) {
-    payloadPost.feature_image = normalizedFeatureImageUrl
-  }
-
   const normalizedTags = normalizeTags(tags)
   if (normalizedTags.length > 0) {
     payloadPost.tags = normalizedTags
+  }
+
+  if (/^https?:\/\//i.test(trimmedFeatureImage)) {
+    payloadPost.feature_image = trimmedFeatureImage
   }
 
   if (nextStatus === 'published') {

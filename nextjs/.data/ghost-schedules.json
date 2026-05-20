@@ -2,8 +2,8 @@
   "schedules": [
     {
       "id": "mp271k0n-gt2s3d",
-      "runAt": 1778616894438,
-      "status": "pending",
+      "runAt": 1778812712624,
+      "status": "error",
       "provider": "groq",
       "model": "llama-3.3-70b-versatile",
       "tone": "정보 전달형",
@@ -21,7 +21,7 @@
         "리뷰",
         "이슈·트렌드"
       ],
-      "categoryIndex": 3,
+      "categoryIndex": 5,
       "startTime": "15:00",
       "intervalHours": 1,
       "repeat": true,
@@ -29,21 +29,21 @@
       "titlePrefix": "",
       "useRandomKeyword": true,
       "createdAt": 1778563930776,
-      "updatedAt": 1778613294438,
-      "lastError": "",
+      "updatedAt": 1778812764594,
+      "lastError": "분당 요청 한도를 초과했습니다. 잠시 후 다시 시도해주세요.",
       "result": {
-        "id": "6a037c324f9bb900016c56cb",
-        "title": "부작용 없는 식단 방법: 건강한 다이어트를 위한 핵심 전략",
-        "slug": "bujagyong-eobsneun-sigdan-bangbeob-geonganghan-daieoteureul-wihan-haegsim-jeonryag",
-        "url": "https://minicloud.shop/bujagyong-eobsneun-sigdan-bangbeob-geonganghan-daieoteureul-wihan-haegsim-jeonryag/",
+        "id": "6a067918c877130001235109",
+        "title": "운동 후 스트레칭 방법",
+        "slug": "undong-hu-seuteurecing-bangbeob",
+        "url": "https://aicorelab.kr/undong-hu-seuteurecing-bangbeob/",
         "status": "published",
-        "adminUrl": "https://minicloud.shop/ghost/#/editor/post/6a037c324f9bb900016c56cb"
+        "adminUrl": "https://minicloud.shop/ghost/#/editor/post/6a067918c877130001235109"
       }
     },
     {
       "id": "mp26x57c-p39jv7",
-      "runAt": 1778630400000,
-      "status": "pending",
+      "runAt": 1778810254593,
+      "status": "error",
       "provider": "groq",
       "model": "llama-3.3-70b-versatile",
       "tone": "정보 전달형",
@@ -61,7 +61,7 @@
         "리뷰",
         "이슈·트렌드"
       ],
-      "categoryIndex": 0,
+      "categoryIndex": 5,
       "weekdays": [
         0,
         1,
@@ -77,9 +77,16 @@
       "titlePrefix": "",
       "useRandomKeyword": true,
       "createdAt": 1778563724952,
-      "updatedAt": 1778563724952,
-      "lastError": "",
-      "result": null
+      "updatedAt": 1778810304303,
+      "lastError": "분당 요청 한도를 초과했습니다. 잠시 후 다시 시도해주세요.",
+      "result": {
+        "id": "6a067a0ac877130001235112",
+        "title": "2026년 전반적 건강관리 방법",
+        "slug": "2026nyeon-jeonbanjeog-geonganggwanri-bangbeob",
+        "url": "https://aicorelab.kr/2026nyeon-jeonbanjeog-geonganggwanri-bangbeob/",
+        "status": "published",
+        "adminUrl": "https://minicloud.shop/ghost/#/editor/post/6a067a0ac877130001235112"
+      }
     }
   ]
 }

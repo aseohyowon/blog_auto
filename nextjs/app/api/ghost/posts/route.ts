@@ -37,15 +37,15 @@ export async function POST(req: NextRequest) {
       html?: unknown
       excerpt?: unknown
       tags?: unknown
-      featureImageUrl?: unknown
       status?: unknown
+      featureImage?: unknown
     }
 
     const title = typeof body.title === 'string' ? body.title.trim() : ''
     const html = typeof body.html === 'string' ? body.html : ''
     const excerpt = typeof body.excerpt === 'string' ? body.excerpt.trim() : ''
+    const featureImage = typeof body.featureImage === 'string' ? body.featureImage.trim() : ''
     const tags = toTagList(body.tags)
-    const featureImageUrl = typeof body.featureImageUrl === 'string' ? body.featureImageUrl.trim() : ''
     const status: GhostStatus = body.status === 'published' ? 'published' : 'draft'
 
     if (!title) {
@@ -61,8 +61,8 @@ export async function POST(req: NextRequest) {
       html,
       excerpt,
       tags,
-      featureImageUrl,
       status,
+      featureImage,
     })
 
     return NextResponse.json({ post })

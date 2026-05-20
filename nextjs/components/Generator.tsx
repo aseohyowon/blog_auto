@@ -454,6 +454,10 @@ export default function Generator() {
   const [scheduleList, setScheduleList] = useState<GhostScheduleItem[]>([])
   const [scheduleListLoading, setScheduleListLoading] = useState(false)
   const [ollamaModels, setOllamaModels] = useState<ModelOption[]>([])
+  const [sdModels, setSdModels] = useState<string[]>([])
+  const [sdModel, setSdModel] = useState<string>('')
+  const [sdStatus, setSdStatus] = useState<string>('')
+  const [sdChecking, setSdChecking] = useState(false)
 
   const textareaRef   = useRef<HTMLTextAreaElement>(null)
   const toastTimer    = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -662,13 +666,36 @@ export default function Generator() {
     void fetchKeywords()
   }, [fetchKeywords, blogType])
 
+  const checkComfyUIModels = useCallback(async () => {
+    setSdChecking(true)
+    try {
+      const res = await fetch('/api/comfyui/models')
+      const data = await res.json() as { connected: boolean; models: string[]; message: string }
+      setSdStatus(data.message)
+      if (data.connected && data.models.length > 0) {
+        setSdModels(data.models)
+        if (!sdModel || !data.models.includes(sdModel)) {
+          setSdModel(data.models[0])
+        }
+      } else {
+        setSdModels([])
+      }
+    } catch {
+      setSdStatus('ComfyUI 연결 실패')
+      setSdModels([])
+    } finally {
+      setSdChecking(false)
+    }
+  }, [sdModel])
+
   useEffect(() => {
     if (provider === 'ollama') {
       void checkOllamaConnection(false)
+      void checkComfyUIModels()
     } else {
       setOllamaStatus('')
     }
-  }, [provider, checkOllamaConnection])
+  }, [provider, checkOllamaConnection, checkComfyUIModels])
 
   const fetchSafeImages = useCallback(async (name?: string, count?: number) => {
     const query = (name ?? celebrity).trim()
@@ -811,45 +838,28 @@ export default function Generator() {
           title: image.title,
         }))
 
-      let res: Response
-      try {
-        res = await fetch('/api/generate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            topic: trimmed,
-            tone,
-            length,
-            model,
-            provider,
-            blogType,
-            celebrity,
-            imageCount,
-            selectedImages,
-          }),
-        })
-      } catch (networkError) {
-        if (networkError instanceof TypeError) {
-          throw new Error('서버 연결에 실패했습니다. Next.js 서버가 실행 중인지 확인 후 다시 시도해주세요.')
-        }
-        throw networkError
-      }
+      const res = await fetch('/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          topic: trimmed,
+          tone,
+          length,
+          model,
+          provider,
+          blogType,
+          celebrity,
+          imageCount,
+          selectedImages,
+          sdModel: provider === 'ollama' && sdModel ? sdModel : undefined,
+        }),
+      })
 
-      let data: {
+      const data = (await res.json()) as {
         html?: string
         error?: string
         retryAfter?: number
         usage?: { total_tokens?: number }
-      }
-      try {
-        data = (await res.json()) as {
-          html?: string
-          error?: string
-          retryAfter?: number
-          usage?: { total_tokens?: number }
-        }
-      } catch {
-        throw new Error('서버 응답을 읽지 못했습니다. 서버 로그를 확인해주세요.')
       }
 
       if (!res.ok) {
@@ -1006,18 +1016,57 @@ export default function Generator() {
             ))}
           </div>
           {provider === 'ollama' && (
-            <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-zinc-800 bg-zinc-950/70 px-4 py-3">
-              <button
-                type="button"
-                onClick={() => void checkOllamaConnection(true)}
-                disabled={ollamaChecking}
-                className="inline-flex items-center gap-2 rounded-xl border border-zinc-700 bg-zinc-900 px-3.5 py-2 text-xs font-semibold text-zinc-200 hover:border-red-600 hover:text-red-300 disabled:opacity-60"
-              >
-                {ollamaChecking ? '확인 중...' : 'Ollama 연결 확인'}
-              </button>
-              <p className="text-xs text-zinc-400">
-                {ollamaStatus || '로컬 Ollama 상태를 확인할 수 있습니다.'}
-              </p>
+            <div className="flex flex-col gap-3">
+              {/* Ollama 연결 확인 */}
+              <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-zinc-800 bg-zinc-950/70 px-4 py-3">
+                <button
+                  type="button"
+                  onClick={() => void checkOllamaConnection(true)}
+                  disabled={ollamaChecking}
+                  className="inline-flex items-center gap-2 rounded-xl border border-zinc-700 bg-zinc-900 px-3.5 py-2 text-xs font-semibold text-zinc-200 hover:border-red-600 hover:text-red-300 disabled:opacity-60"
+                >
+                  {ollamaChecking ? '확인 중...' : 'Ollama 연결 확인'}
+                </button>
+                <p className="text-xs text-zinc-400">
+                  {ollamaStatus || '로컬 Ollama 상태를 확인할 수 있습니다.'}
+                </p>
+              </div>
+
+              {/* ComfyUI SD 이미지 모델 선택 */}
+              <div className="rounded-2xl border border-purple-900/40 bg-purple-950/20 px-4 py-3 flex flex-col gap-2">
+                <div className="flex items-center gap-3">
+                  <span className="text-[10px] font-bold text-purple-400 uppercase tracking-widest">🎨 SD 이미지 모델 (ComfyUI)</span>
+                  <button
+                    type="button"
+                    onClick={() => void checkComfyUIModels()}
+                    disabled={sdChecking}
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-purple-900/50 bg-purple-950/40 px-2.5 py-1 text-[11px] font-semibold text-purple-300 hover:border-purple-600 disabled:opacity-60"
+                  >
+                    {sdChecking ? '확인 중...' : '새로고침'}
+                  </button>
+                  <p className="text-[11px] text-purple-400/70">{sdStatus}</p>
+                </div>
+                {sdModels.length > 0 ? (
+                  <div className="flex gap-2 flex-wrap">
+                    {sdModels.map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => setSdModel(m)}
+                        className={`px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all ${
+                          sdModel === m
+                            ? 'border-purple-600 bg-purple-600/15 text-purple-300'
+                            : 'border-zinc-700 bg-zinc-900 text-zinc-400 hover:border-purple-700 hover:text-purple-300'
+                        }`}
+                      >
+                        {m.replace(/\.safetensors$/, '').replace(/\.ckpt$/, '')}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-zinc-500">ComfyUI가 실행 중이어야 모델 목록이 표시됩니다. (port 8188)</p>
+                )}
+              </div>
             </div>
           )}
         </section>

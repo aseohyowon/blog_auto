@@ -23,6 +23,10 @@ interface ResolveImageOptions {
   blogType: 'general' | 'review' | 'travel' | 'it-news' | 'celebrity'
   count?: number
   preferredImages?: Array<{ url: string; source: string; title: string }>
+  /** LLM provider name (e.g. 'ollama'). When 'ollama', SD images are fetched first. */
+  provider?: string
+  /** ComfyUI checkpoint filename override (e.g. 'DreamShaper8_LCM.safetensors') */
+  sdModel?: string
 }
 
 const CACHE_TTL_MS = Number(process.env.IMAGE_CACHE_TTL_MS || 1000 * 60 * 60 * 6)
@@ -391,7 +395,7 @@ const SD_NEGATIVE_PROMPT = [
 
 // ── Stable Diffusion: ComfyUI (http://127.0.0.1:8188) ───────────────────────
 // ComfyUI uses async queue: POST /prompt → poll /history/{id} → GET /view
-async function generateWithLocalSD(query: string): Promise<Array<Omit<ImageCandidate, 'relevanceScore'>>> {
+async function generateWithLocalSD(query: string, sdModelOverride?: string): Promise<Array<Omit<ImageCandidate, 'relevanceScore'>>> {
   const baseUrl = (process.env.SD_COMFYUI_URL || '').replace(/\/$/, '')
   if (!baseUrl) return []
 
@@ -400,7 +404,7 @@ async function generateWithLocalSD(query: string): Promise<Array<Omit<ImageCandi
   const height = Number(process.env.SD_HEIGHT || 512)
   const steps = Number(process.env.SD_STEPS || 10)
   const cfgScale = Number(process.env.SD_CFG_SCALE || 7)
-  const model = process.env.SD_MODEL_CHECKPOINT || 'DreamShaper8_LCM.safetensors'
+  const model = sdModelOverride || process.env.SD_MODEL_CHECKPOINT || 'DreamShaper8_LCM.safetensors'
   const timeout = Number(process.env.SD_TIMEOUT_MS || 300_000) // CPU는 느려서 5분
 
   // ComfyUI workflow (node graph)
@@ -537,8 +541,8 @@ async function generateWithStabilityAI(query: string): Promise<Array<Omit<ImageC
 }
 
 // ── Combined AI image fallback (SD local → StabilityAI → OpenAI) ─────────────
-async function generateSdImage(query: string): Promise<Array<Omit<ImageCandidate, 'relevanceScore'>>> {
-  const local = await generateWithLocalSD(query)
+async function generateSdImage(query: string, sdModelOverride?: string): Promise<Array<Omit<ImageCandidate, 'relevanceScore'>>> {
+  const local = await generateWithLocalSD(query, sdModelOverride)
   if (local.length > 0) return local
 
   const cloud = await generateWithStabilityAI(query)
@@ -631,7 +635,16 @@ export async function resolveImagesForPost(options: ResolveImageOptions): Promis
     relevanceScore: 500,
   }))
 
-  const fetched = await fetchProviderImages(topic, count + 4, issueTopic)
+  const isOllama = options.provider === 'ollama'
+  const sdComfyUrl = process.env.SD_COMFYUI_URL
+
+  // When using local LLM (Ollama) + ComfyUI is configured: generate SD images concurrently
+  // with stock image fetching, then prefer SD results.
+  const [fetched, earlySdImages] = await Promise.all([
+    fetchProviderImages(topic, count + 4, issueTopic),
+    isOllama && sdComfyUrl ? generateSdImage(topic, options.sdModel) : Promise.resolve([]),
+  ])
+
   const usedSet = await getUsedImageSet()
 
   const cleaned = dedupeImages(fetched)
@@ -643,16 +656,25 @@ export async function resolveImagesForPost(options: ResolveImageOptions): Promis
     }))
     .sort((a, b) => b.relevanceScore - a.relevanceScore)
 
-  let selected = [...preferred, ...cleaned].slice(0, count)
+  // SD images get a high relevance score when Ollama is the provider so they appear first
+  const SD_OLLAMA_PRIORITY = 200
+  const scoredEarlySd = earlySdImages.map((item) => ({
+    ...item,
+    relevanceScore: isOllama ? SD_OLLAMA_PRIORITY : computeRelevance(item, topic, keywords, issueTopic),
+  }))
+
+  let selected = [...preferred, ...scoredEarlySd, ...cleaned].slice(0, count)
 
   if (selected.length < count) {
-    // Stable Diffusion fallback (local WebUI → StabilityAI cloud)
-    const sdImages = await generateSdImage(topic)
-    const scoredSd = sdImages.map((item) => ({
-      ...item,
-      relevanceScore: computeRelevance(item, topic, keywords, issueTopic),
-    }))
-    selected = [...selected, ...scoredSd].slice(0, count)
+    // Stable Diffusion fallback (local → StabilityAI cloud) — only if not already fetched above
+    if (!isOllama || !sdComfyUrl) {
+      const sdImages = await generateSdImage(topic, options.sdModel)
+      const scoredSd = sdImages.map((item) => ({
+        ...item,
+        relevanceScore: computeRelevance(item, topic, keywords, issueTopic),
+      }))
+      selected = [...selected, ...scoredSd].slice(0, count)
+    }
   }
 
   if (selected.length < count) {

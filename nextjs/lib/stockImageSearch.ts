@@ -2,7 +2,7 @@ export interface StockImage {
   url: string
   pageUrl: string
   title: string
-  source: 'pexels' | 'pixabay'
+  source: 'pexels' | 'pixabay' | 'unsplash'
 }
 
 // ── Pexels ────────────────────────────────────────────────────────────────────
@@ -83,7 +83,49 @@ async function searchPixabay(query: string, limit: number): Promise<StockImage[]
   }))
 }
 
-// ── Combined search: Pexels first, Pixabay as fallback ───────────────────────
+// ── Unsplash ─────────────────────────────────────────────────────────────────
+interface UnsplashPhoto {
+  alt_description: string | null
+  description: string | null
+  links?: { html?: string }
+  urls?: { regular?: string; full?: string; small?: string }
+}
+
+interface UnsplashResponse {
+  results?: UnsplashPhoto[]
+}
+
+async function searchUnsplash(query: string, limit: number): Promise<StockImage[]> {
+  const accessKey = process.env.UNSPLASH_ACCESS_KEY
+  if (!accessKey) return []
+
+  const params = new URLSearchParams({
+    query,
+    per_page: String(limit),
+    orientation: 'landscape',
+    content_filter: 'high',
+  })
+
+  const res = await fetch(`https://api.unsplash.com/search/photos?${params}`, {
+    headers: {
+      Authorization: `Client-ID ${accessKey}`,
+      'Accept-Version': 'v1',
+    },
+    next: { revalidate: 3600 },
+  })
+
+  if (!res.ok) return []
+
+  const data = (await res.json()) as UnsplashResponse
+  return (data.results ?? []).map((photo) => ({
+    url: photo.urls?.regular || photo.urls?.full || photo.urls?.small || '',
+    pageUrl: photo.links?.html || '',
+    title: photo.alt_description || photo.description || query,
+    source: 'unsplash' as const,
+  })).filter((item) => item.url && item.pageUrl)
+}
+
+// ── Combined search: Pexels -> Pixabay -> Unsplash ──────────────────────────
 export async function searchStockImages(query: string, limit = 5): Promise<StockImage[]> {
   const safeLimit = Math.max(1, Math.min(10, limit))
 
@@ -92,9 +134,17 @@ export async function searchStockImages(query: string, limit = 5): Promise<Stock
     return pexelsResults.slice(0, safeLimit)
   }
 
-  const remaining = safeLimit - pexelsResults.length
-  const pixabayResults = await searchPixabay(query, remaining + 2)
+  const remainingAfterPexels = safeLimit - pexelsResults.length
+  const pixabayResults = await searchPixabay(query, remainingAfterPexels + 2)
 
-  const combined = [...pexelsResults, ...pixabayResults]
+  const combinedFirst = [...pexelsResults, ...pixabayResults]
+  if (combinedFirst.length >= safeLimit) {
+    return combinedFirst.slice(0, safeLimit)
+  }
+
+  const remainingAfterPixabay = safeLimit - combinedFirst.length
+  const unsplashResults = await searchUnsplash(query, remainingAfterPixabay + 2)
+
+  const combined = [...combinedFirst, ...unsplashResults]
   return combined.slice(0, safeLimit)
 }
