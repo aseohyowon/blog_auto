@@ -389,55 +389,96 @@ const SD_NEGATIVE_PROMPT = [
   'logo', 'blurry', 'low quality', 'deformed', 'ugly', 'duplicate',
 ].join(', ')
 
-// ── Stable Diffusion: local WebUI (AUTOMATIC1111 / Forge / ComfyUI) ──────────
+// ── Stable Diffusion: ComfyUI (http://127.0.0.1:8188) ───────────────────────
+// ComfyUI uses async queue: POST /prompt → poll /history/{id} → GET /view
 async function generateWithLocalSD(query: string): Promise<Array<Omit<ImageCandidate, 'relevanceScore'>>> {
-  const baseUrl = (process.env.SD_WEBUI_URL || 'http://127.0.0.1:7860').replace(/\/$/, '')
-  if (!process.env.SD_WEBUI_URL) return []
+  const baseUrl = (process.env.SD_COMFYUI_URL || '').replace(/\/$/, '')
+  if (!baseUrl) return []
 
-  const prompt = buildSdPrompt(query)
-  const width = Number(process.env.SD_WIDTH || 1344)
-  const height = Number(process.env.SD_HEIGHT || 768)
-  const steps = Number(process.env.SD_STEPS || 20)
+  const positivePrompt = buildSdPrompt(query)
+  const width = Number(process.env.SD_WIDTH || 512)
+  const height = Number(process.env.SD_HEIGHT || 512)
+  const steps = Number(process.env.SD_STEPS || 10)
   const cfgScale = Number(process.env.SD_CFG_SCALE || 7)
-  const model = process.env.SD_MODEL_CHECKPOINT || ''
+  const model = process.env.SD_MODEL_CHECKPOINT || 'DreamShaper8_LCM.safetensors'
+  const timeout = Number(process.env.SD_TIMEOUT_MS || 300_000) // CPU는 느려서 5분
 
-  const payload: Record<string, unknown> = {
-    prompt,
-    negative_prompt: SD_NEGATIVE_PROMPT,
-    width,
-    height,
-    steps,
-    cfg_scale: cfgScale,
-    sampler_name: process.env.SD_SAMPLER || 'DPM++ 2M Karras',
-    batch_size: 1,
-    n_iter: 1,
-    save_images: false,
-    send_images: true,
+  // ComfyUI workflow (node graph)
+  const workflow = {
+    '4': { class_type: 'CheckpointLoaderSimple', inputs: { ckpt_name: model } },
+    '5': { class_type: 'EmptyLatentImage', inputs: { width, height, batch_size: 1 } },
+    '6': { class_type: 'CLIPTextEncode', inputs: { text: positivePrompt, clip: ['4', 1] } },
+    '7': { class_type: 'CLIPTextEncode', inputs: { text: SD_NEGATIVE_PROMPT, clip: ['4', 1] } },
+    '3': {
+      class_type: 'KSampler',
+      inputs: {
+        seed: Math.floor(Math.random() * 1e9),
+        steps,
+        cfg: cfgScale,
+        sampler_name: 'dpmpp_2m',
+        scheduler: 'karras',
+        denoise: 1,
+        model: ['4', 0],
+        positive: ['6', 0],
+        negative: ['7', 0],
+        latent_image: ['5', 0],
+      },
+    },
+    '8': { class_type: 'VAEDecode', inputs: { samples: ['3', 0], vae: ['4', 2] } },
+    '9': { class_type: 'SaveImage', inputs: { filename_prefix: 'blog-ai', images: ['8', 0] } },
   }
-  if (model) payload.override_settings = { sd_model_checkpoint: model }
 
   try {
-    const res = await fetch(`${baseUrl}/sdapi/v1/txt2img`, {
+    // 1) 큐에 추가
+    const queueRes = await fetch(`${baseUrl}/prompt`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(Number(process.env.SD_TIMEOUT_MS || 120_000)),
+      body: JSON.stringify({ prompt: workflow }),
+      signal: AbortSignal.timeout(30_000),
     })
+    if (!queueRes.ok) return []
+    const { prompt_id } = await queueRes.json() as { prompt_id: string }
+    if (!prompt_id) return []
 
-    if (!res.ok) return []
+    // 2) 완료될 때까지 폴링 (CPU라서 오래 걸릴 수 있음)
+    const deadline = Date.now() + timeout
+    type HistoryOutput = { images?: Array<{ filename: string; subfolder: string; type: string }> }
+    type HistoryEntry = { outputs?: Record<string, HistoryOutput> }
+    let outputs: Record<string, HistoryOutput> | undefined
 
-    const data = await res.json() as { images?: string[] }
-    const b64 = data.images?.[0]
-    if (!b64) return []
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 3000))
+      const histRes = await fetch(`${baseUrl}/history/${prompt_id}`, { signal: AbortSignal.timeout(10_000) })
+      if (!histRes.ok) continue
+      const history = await histRes.json() as Record<string, HistoryEntry>
+      if (history[prompt_id]?.outputs) {
+        outputs = history[prompt_id].outputs
+        break
+      }
+    }
+    if (!outputs) return []
 
-    // base64 이미지를 data URI로 반환 — Ghost 업로드 또는 다이렉트 삽입에 사용
-    const dataUrl = `data:image/png;base64,${b64}`
+    // 3) 이미지 파일 정보 추출
+    const nodeOut = Object.values(outputs).find((o) => (o.images?.length ?? 0) > 0)
+    const img = nodeOut?.images?.[0]
+    if (!img) return []
+
+    // 4) 이미지 바이너리 → base64 data URI
+    const viewRes = await fetch(
+      `${baseUrl}/view?filename=${encodeURIComponent(img.filename)}&subfolder=${encodeURIComponent(img.subfolder)}&type=${img.type}`,
+      { signal: AbortSignal.timeout(30_000) },
+    )
+    if (!viewRes.ok) return []
+
+    const buf = await viewRes.arrayBuffer()
+    const dataUrl = `data:image/png;base64,${Buffer.from(buf).toString('base64')}`
+
     return [{
       url: dataUrl,
       pageUrl: baseUrl,
-      title: `${query} (Stable Diffusion)`,
+      title: `${query} (Stable Diffusion via ComfyUI)`,
       provider: 'stable-diffusion' as const,
-      sourceLabel: 'Stable Diffusion (Local)',
+      sourceLabel: 'Stable Diffusion (ComfyUI)',
       license: 'AI Generated',
       keyword: query,
     }]
