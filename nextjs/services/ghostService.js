@@ -72,6 +72,76 @@ function createGhostAdminToken(adminApiKey) {
   return `${unsignedToken}.${base64UrlEncode(signature)}`
 }
 
+/**
+ * base64 data URI 이미지를 Ghost 미디어 라이브러리에 업로드하고 URL을 반환합니다.
+ * 실패 시 null 반환.
+ */
+async function uploadBase64ImageToGhost(dataUri, ghostUrl, adminApiKey) {
+  try {
+    const match = dataUri.match(/^data:(image\/[a-z+]+);base64,(.+)$/is)
+    if (!match) return null
+
+    const [, mimeType, base64Data] = match
+    const rawExt = mimeType.split('/')[1] || 'png'
+    const ext = rawExt.replace('+xml', '').replace(/[^a-z0-9]/gi, '') || 'png'
+    const buf = Buffer.from(base64Data, 'base64')
+    const blob = new Blob([buf], { type: mimeType })
+
+    const formData = new FormData()
+    formData.append('file', blob, `sd-image-${Date.now()}.${ext}`)
+    formData.append('purpose', 'image')
+
+    const jwt = createGhostAdminToken(adminApiKey)
+    const apiVersion = process.env.GHOST_API_VERSION || DEFAULT_API_VERSION
+
+    const res = await fetch(`${ghostUrl}/ghost/api/admin/images/upload`, {
+      method: 'POST',
+      headers: {
+        'Accept-Version': apiVersion,
+        'Authorization': `Ghost ${jwt}`,
+        // Content-Type은 설정하지 않음 — fetch가 multipart boundary를 자동으로 설정
+      },
+      body: formData,
+      signal: AbortSignal.timeout(60_000),
+    })
+
+    if (!res.ok) return null
+
+    const data = await res.json().catch(() => null)
+    return data?.images?.[0]?.url || null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * HTML 내의 base64 data URI img 태그를 Ghost 미디어 URL로 교체합니다.
+ */
+async function replaceBase64ImagesInHtml(html, ghostUrl, adminApiKey) {
+  const dataUriRegex = /src="(data:image\/[a-z+]+;base64,[^"]{20,})"/gi
+  const rawMatches = [...html.matchAll(dataUriRegex)]
+  if (rawMatches.length === 0) return html
+
+  const uniqueUris = [...new Set(rawMatches.map((m) => m[1]))]
+
+  const results = await Promise.all(
+    uniqueUris.map(async (uri) => {
+      const url = await uploadBase64ImageToGhost(uri, ghostUrl, adminApiKey)
+      return [uri, url]
+    }),
+  )
+
+  const uploadMap = new Map(results.filter(([, url]) => url !== null))
+  if (uploadMap.size === 0) return html
+
+  let result = html
+  for (const [uri, url] of uploadMap) {
+    // split/join으로 교체 — data URI에 regex 특수문자가 포함될 수 있어 replaceAll보다 안전
+    result = result.split(`src="${uri}"`).join(`src="${url}"`)
+  }
+  return result
+}
+
 function normalizeTags(tags) {
   if (!Array.isArray(tags)) return []
 
@@ -115,11 +185,20 @@ export async function createGhostPost({ title, html, excerpt, tags, status, feat
     throw createError('Ghost 업로드용 본문 HTML이 비어 있습니다.', 400)
   }
 
+  // base64 data URI 이미지를 Ghost 미디어 라이브러리에 업로드 후 URL로 교체
+  const processedHtml = await replaceBase64ImagesInHtml(trimmedHtml, ghostUrl, adminApiKey)
+
+  // featureImage가 data URI인 경우도 업로드
+  let resolvedFeatureImage = trimmedFeatureImage
+  if (/^data:image\//i.test(trimmedFeatureImage)) {
+    resolvedFeatureImage = (await uploadBase64ImageToGhost(trimmedFeatureImage, ghostUrl, adminApiKey)) || ''
+  }
+
   const nextStatus = status === 'published' ? 'published' : 'draft'
 
   const payloadPost = {
     title: trimmedTitle,
-    html: trimmedHtml,
+    html: processedHtml,
     status: nextStatus,
   }
 
@@ -132,8 +211,8 @@ export async function createGhostPost({ title, html, excerpt, tags, status, feat
     payloadPost.tags = normalizedTags
   }
 
-  if (/^https?:\/\//i.test(trimmedFeatureImage)) {
-    payloadPost.feature_image = trimmedFeatureImage
+  if (/^https?:\/\//i.test(resolvedFeatureImage)) {
+    payloadPost.feature_image = resolvedFeatureImage
   }
 
   if (nextStatus === 'published') {
