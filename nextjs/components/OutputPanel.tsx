@@ -92,9 +92,16 @@ function extractGhostDefaults(rawHtml: string, topic?: string): { title: string;
 }
 
 function extractFirstImageSrc(rawHtml: string): string {
-  const match = rawHtml.match(/<img[^>]+\ssrc\s*=\s*["']([^"']+)["']/i)
-  const src = match?.[1]?.trim() || ''
-  if (/^https?:\/\//i.test(src) || /^data:image\//i.test(src)) return src
+  // 1. <img src="..."> 태그에서 추출 (\b 사용으로 src가 첫 번째 속성이어도 매칭)
+  const imgMatch = rawHtml.match(/<img[^>]*\bsrc\s*=\s*["']([^"']+)["']/i)
+  const imgSrc = imgMatch?.[1]?.trim() || ''
+  if (/^https?:\/\//i.test(imgSrc) || /^data:image\//i.test(imgSrc)) return imgSrc
+
+  // 2. CSS background-image:url(...) 에서 추출 (히어로 이미지 등)
+  const bgMatch = rawHtml.match(/background-image\s*:\s*url\(["']?([^"')]+)["']?\)/i)
+  const bgSrc = bgMatch?.[1]?.trim() || ''
+  if (/^https?:\/\//i.test(bgSrc)) return bgSrc
+
   return ''
 }
 
