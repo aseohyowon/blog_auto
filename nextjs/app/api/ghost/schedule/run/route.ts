@@ -119,7 +119,10 @@ export async function POST(req: NextRequest) {
     const dueSchedules = await getDueSchedules()
     const results: Array<Record<string, unknown>> = []
 
-    for (const schedule of dueSchedules) {
+    for (const [idx, schedule] of dueSchedules.entries()) {
+      if (idx > 0) {
+        await new Promise(resolve => setTimeout(resolve, 3000))
+      }
       try {
         const { topic, category } = await getKeywordForSchedule(schedule)
         const generated = await generatePost(schedule, topic)
@@ -167,8 +170,11 @@ export async function POST(req: NextRequest) {
         })
       } catch (error) {
         const message = error instanceof Error ? error.message : '예약 처리 중 오류가 발생했습니다.'
+        const isRateLimit = /한도|rate.?limit|429|too many/i.test(message)
+        const retryDelayMs = isRateLimit ? 10 * 60 * 1000 : 5 * 60 * 1000
         await updateSchedule(schedule.id, {
-          status: 'error',
+          status: 'pending',
+          runAt: Date.now() + retryDelayMs,
           updatedAt: Date.now(),
           lastError: message,
         })

@@ -2,8 +2,8 @@
   "schedules": [
     {
       "id": "mp271k0n-gt2s3d",
-      "runAt": 1778812712624,
-      "status": "error",
+      "runAt": 1779434406243,
+      "status": "pending",
       "provider": "groq",
       "model": "llama-3.3-70b-versatile",
       "tone": "정보 전달형",
@@ -21,7 +21,7 @@
         "리뷰",
         "이슈·트렌드"
       ],
-      "categoryIndex": 5,
+      "categoryIndex": 7,
       "startTime": "15:00",
       "intervalHours": 1,
       "repeat": true,
@@ -29,21 +29,21 @@
       "titlePrefix": "",
       "useRandomKeyword": true,
       "createdAt": 1778563930776,
-      "updatedAt": 1778812764594,
+      "updatedAt": 1779433806243,
       "lastError": "분당 요청 한도를 초과했습니다. 잠시 후 다시 시도해주세요.",
       "result": {
-        "id": "6a067918c877130001235109",
-        "title": "운동 후 스트레칭 방법",
-        "slug": "undong-hu-seuteurecing-bangbeob",
-        "url": "https://aicorelab.kr/undong-hu-seuteurecing-bangbeob/",
+        "id": "6a0fe8e3cec42b00017b36e4",
+        "title": "2026년 연말 여행 팁",
+        "slug": "2026nyeon-yeonmal-yeohaeng-tib",
+        "url": "https://aicorelab.kr/2026nyeon-yeonmal-yeohaeng-tib/",
         "status": "published",
-        "adminUrl": "https://minicloud.shop/ghost/#/editor/post/6a067918c877130001235109"
+        "adminUrl": "https://aicorelab.kr/ghost/#/editor/post/6a0fe8e3cec42b00017b36e4"
       }
     },
     {
       "id": "mp26x57c-p39jv7",
-      "runAt": 1778810254593,
-      "status": "error",
+      "runAt": 1779434587052,
+      "status": "pending",
       "provider": "groq",
       "model": "llama-3.3-70b-versatile",
       "tone": "정보 전달형",
@@ -61,7 +61,7 @@
         "리뷰",
         "이슈·트렌드"
       ],
-      "categoryIndex": 5,
+      "categoryIndex": 1,
       "weekdays": [
         0,
         1,
@@ -77,15 +77,15 @@
       "titlePrefix": "",
       "useRandomKeyword": true,
       "createdAt": 1778563724952,
-      "updatedAt": 1778810304303,
+      "updatedAt": 1779433987052,
       "lastError": "분당 요청 한도를 초과했습니다. 잠시 후 다시 시도해주세요.",
       "result": {
-        "id": "6a067a0ac877130001235112",
-        "title": "2026년 전반적 건강관리 방법",
-        "slug": "2026nyeon-jeonbanjeog-geonganggwanri-bangbeob",
-        "url": "https://aicorelab.kr/2026nyeon-jeonbanjeog-geonganggwanri-bangbeob/",
+        "id": "6a0ff16ccec42b00017b36ff",
+        "title": "2026년 스마트폰 배터리 기술: 더 긴 배터리 수명과 혁신",
+        "slug": "2026nyeon-seumateupon-baeteori-gisul-deo-gin-baeteori-sumyeonggwa-hyeogsin",
+        "url": "https://aicorelab.kr/2026nyeon-seumateupon-baeteori-gisul-deo-gin-baeteori-sumyeonggwa-hyeogsin/",
         "status": "published",
-        "adminUrl": "https://minicloud.shop/ghost/#/editor/post/6a067a0ac877130001235112"
+        "adminUrl": "https://aicorelab.kr/ghost/#/editor/post/6a0ff16ccec42b00017b36ff"
       }
     }
   ]
