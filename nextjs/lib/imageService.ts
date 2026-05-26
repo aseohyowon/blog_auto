@@ -803,11 +803,23 @@ export function injectImageEnhancements(html: string, images: ImageCandidate[]):
       return rep ? `background-image: url("${rep}")` : full
     })
 
-  // 기존 <img> 태그에 lazy loading / async decoding 추가
+  // 기존 <img> 태그에 lazy loading / async decoding 추가 + 고정 높이 제거 (이미지 짤림 방지)
   next = next.replace(/<img\b([^>]*)>/gi, (_full, attrs) => {
     let patched = attrs as string
     if (!/\sloading\s*=\s*['"]/i.test(patched)) patched += ' loading="lazy"'
     if (!/\sdecoding\s*=\s*['"]/i.test(patched)) patched += ' decoding="async"'
+    // Normalize style: remove fixed height (causes cropping), ensure max-width:100%;height:auto
+    const styleMatch = patched.match(/\bstyle\s*=\s*["']([^"']*)["']/i)
+    if (styleMatch) {
+      let s = styleMatch[1]
+      // Remove height: fixed value (keep height:auto if already present)
+      s = s.replace(/\bheight\s*:\s*(?!auto)[^;]+;?/gi, '')
+      if (!/\bmax-width\b/i.test(s)) s = s.trimEnd().replace(/;?$/, ';') + 'max-width:100%'
+      if (!/\bheight\b/i.test(s)) s = s.trimEnd().replace(/;?$/, ';') + 'height:auto'
+      patched = patched.replace(styleMatch[0], `style="${s.replace(/^;+|;+$/g, '')}"`)
+    } else {
+      patched += ' style="max-width:100%;height:auto"'
+    }
     return `<img${patched}>`
   })
 

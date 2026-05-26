@@ -480,7 +480,12 @@ export default function OutputPanel({ html, loading, tokens, topic, showToast }:
           srcDoc={html}
           sandbox="allow-same-origin"
           title="블로그 미리보기"
-          className="w-full min-h-[960px] border-0 bg-[#111]"
+          className="w-full border-0 bg-[#111]"
+          style={{ minHeight: '960px', height: 'auto' }}
+          onLoad={(e) => {
+            const f = e.currentTarget
+            try { f.style.height = f.contentDocument?.body?.scrollHeight + 'px' } catch {}
+          }}
         />
       )}
     </div>
