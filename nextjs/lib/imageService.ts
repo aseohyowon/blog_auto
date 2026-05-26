@@ -771,8 +771,40 @@ export async function resolveImagesForPost(options: ResolveImageOptions): Promis
 export function injectImageEnhancements(html: string, images: ImageCandidate[]): string {
   if (!html.trim()) return html
 
+  // ── Step 0: Replace LLM-fabricated image URLs with real fetched images ──────
+  // Small local LLMs (e.g. gemma4:e2b) often hallucinate invalid image URLs
+  // (picsum.photos, random unsplash IDs, etc.) instead of using the provided ones.
+  // Replace any <img src> or CSS background-image URL that is NOT a trusted URL
+  // (data:image/, wsrv.nl proxy, or placehold.co) with a real URL from imageCandidates.
+  const TRUSTED_URL_PREFIXES = ['data:image/', 'https://wsrv.nl/', 'https://placehold.co/']
+  const knownCandidateUrls = new Set(images.map((img) => img.url))
+  const stockPool = images.filter(
+    (img) => img.provider !== 'stable-diffusion' && img.provider !== 'ai-generated' && img.provider !== 'placeholder',
+  )
+  let stockReplaceIdx = 0
+  const isTrustedUrl = (src: string) =>
+    TRUSTED_URL_PREFIXES.some((p) => src.startsWith(p)) || knownCandidateUrls.has(src)
+  const nextStockUrl = (): string | null => {
+    if (!stockPool.length) return null
+    const url = stockPool[stockReplaceIdx % stockPool.length].url
+    stockReplaceIdx++
+    return url
+  }
+  let next = html
+    .replace(/<img\b([^>]*)>/gi, (full, attrs: string) => {
+      const m = attrs.match(/\bsrc\s*=\s*["']([^"']+)["']/i)
+      if (!m || isTrustedUrl(m[1])) return full
+      const rep = nextStockUrl()
+      return rep ? full.replace(m[0], `src="${rep}"`) : full
+    })
+    .replace(/background-image\s*:\s*url\s*\(\s*["']?([^"')]+)["']?\s*\)/gi, (full, src: string) => {
+      if (isTrustedUrl(src.trim())) return full
+      const rep = nextStockUrl()
+      return rep ? `background-image: url("${rep}")` : full
+    })
+
   // 기존 <img> 태그에 lazy loading / async decoding 추가
-  let next = html.replace(/<img\b([^>]*)>/gi, (_full, attrs) => {
+  next = next.replace(/<img\b([^>]*)>/gi, (_full, attrs) => {
     let patched = attrs as string
     if (!/\sloading\s*=\s*['"]/i.test(patched)) patched += ' loading="lazy"'
     if (!/\sdecoding\s*=\s*['"]/i.test(patched)) patched += ' decoding="async"'

@@ -44,6 +44,47 @@ type SystemPrompt = string
 
 const MIN_BODY_TEXT_LENGTH = 1000
 
+// ── Strip LLM meta-commentary ────────────────────────────────────────────────
+// Local LLMs (e.g. gemma4:e2b) often inject disclaimers like
+// "주의: 이 내용은 텍스트 기반으로 생성되었으며 이미지에 대한 접근 권한이 없습니다"
+// or wrap output in markdown code fences. Remove these artefacts.
+function stripLlmMetaCommentary(html: string): string {
+  let out = html.trim()
+
+  // 1) Unwrap markdown code fences (```html ... ``` or ``` ... ```)
+  out = out.replace(/^```(?:html)?\s*/i, '').replace(/\s*```\s*$/i, '').trim()
+
+  // 2) Remove disclaimer / meta-commentary <p> blocks
+  //    Matches: <p>(optional <strong>)(주의|참고|안내|NOTE|Warning…)(:</strong> | :<br>)…</p>
+  const DISCLAIMER_TAGS = '주의|참고|안내|노트|알림|NOTE|Note|Warning|Disclaimer|NOTICE|면책'
+  out = out.replace(
+    new RegExp(`<p[^>]*>\\s*(?:<[^>]+>)*(?:${DISCLAIMER_TAGS})[:\s：].*?</p>`, 'gis'),
+    '',
+  )
+
+  // 3) Remove <p> blocks that contain known "I can't access images" phrases
+  const CANT_ACCESS_PHRASES = [
+    '텍스트 기반으로 생성',
+    '이미지나 실제 파일에 대한',
+    '직접적인 접근 권한',
+    '요청하신 내용에 기반하여 구성',
+    '실제 이미지에 액세스',
+    '이미지를 직접 생성',
+    '이미지 생성 기능이 없',
+    'cannot access images',
+    'no access to images',
+    'text-based content only',
+  ]
+  for (const phrase of CANT_ACCESS_PHRASES) {
+    out = out.replace(
+      new RegExp(`<p[^>]*>[^<]*${phrase}[^<]*</p>`, 'gi'),
+      '',
+    )
+  }
+
+  return out.trim()
+}
+
 function stripHtmlToText(html: string): string {
   return html
     .replace(/<style[\s\S]*?<\/style>/gi, ' ')
@@ -334,6 +375,8 @@ export async function POST(req: NextRequest) {
         { status: 422 },
       )
     }
+
+    result = { ...result, html: stripLlmMetaCommentary(result.html) }
 
     const enhancedHtml = injectImageEnhancements(result.html, imageCandidates)
 
