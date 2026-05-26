@@ -53,7 +53,7 @@ REQUIRED SECTIONS (exact order)
    HTML structure:
      <div class="ts-hero">
        <div class="ts-hero-inner">
-         <h1>…keyword-rich title…</h1>
+         <h2>…keyword-rich title…</h2>
          <p>…subtitle / hook sentence…</p>
        </div>
      </div>
@@ -63,9 +63,9 @@ REQUIRED SECTIONS (exact order)
      .ts-hero::before { content:""; position:absolute; inset:0;
                         background:linear-gradient(135deg,rgba(0,0,0,0.82) 0%,rgba(160,0,0,0.42) 100%); }
      .ts-hero-inner   { position:relative; z-index:1; padding:70px 44px; }
-     .ts-hero h1      { font-size:2.4rem; font-weight:900; color:#fff; margin:0 0 14px; line-height:1.2; }
+     .ts-hero h2      { font-size:2.4rem; font-weight:900; color:#fff; margin:0 0 14px; line-height:1.2; }
      .ts-hero p       { font-size:1rem; color:rgba(255,255,255,0.80); margin:0; max-width:580px; line-height:1.7; }
-   Mobile: padding:44px 20px; h1 font-size:1.6rem;
+   Mobile: padding:44px 20px; h2 font-size:1.6rem;
 
 ③ ts-intro — Introduction section
    <span class="ts-label">INTRODUCTION</span>
@@ -158,7 +158,9 @@ STRICTLY FORBIDDEN
 - Skipping any required section
 - Class names without the ts- prefix
 - <script> tags of any kind
-- Fabricated/broken image URLs — only use URLs you are confident exist`
+- Fabricated/broken image URLs — only use URLs you are confident exist
+- <h1> tags anywhere in the content — Ghost displays the post title as <h1>; use <h2> for hero and section headings
+- Chinese characters (漢字/Hanja) of any kind — write ONLY in Korean Hangul (한글)`
 
 // ─── User prompt builder ───────────────────────────────────────────────────────
 export function buildUserPrompt(
@@ -257,7 +259,7 @@ REQUIRED SECTIONS (exact order)
      .rv-hero::before { content:""; position:absolute; inset:0;
                         background:linear-gradient(135deg,rgba(0,0,0,0.88) 0%,rgba(120,53,15,0.55) 100%); }
      .rv-hero-inner   { position:relative; z-index:1; padding:60px 44px; }
-     .rv-hero h1      { font-size:2.2rem; font-weight:900; color:#fff; margin:0 0 12px; line-height:1.2; }
+     .rv-hero h2      { font-size:2.2rem; font-weight:900; color:#fff; margin:0 0 12px; line-height:1.2; }
      .rv-hero-stars   { font-size:1.8rem; color:#f59e0b; letter-spacing:4px; margin-bottom:10px; }
      .rv-hero-score   { display:inline-block; background:#f59e0b; color:#000; font-size:1.4rem;
                         font-weight:900; padding:6px 18px; border-radius:8px; margin-bottom:12px; }
@@ -362,7 +364,9 @@ STRICTLY FORBIDDEN
 - Skipping any required section
 - Class names without the rv- prefix
 - <script> tags of any kind
-- Fabricated/broken image URLs`
+- Fabricated/broken image URLs
+- <h1> tags anywhere in the content — use <h2> for hero headings
+- Chinese characters (漢字/Hanja) — write ONLY in Korean Hangul (한글)`
 
 // ─── Travel Guide template prompt ─────────────────────────────────────────────
 export const TRAVEL_SYSTEM_PROMPT = `You are an expert Korean SEO blog writer specializing in
@@ -412,10 +416,10 @@ REQUIRED SECTIONS (exact order)
      .tg-hero-badge   { display:inline-block; background:#14b8a6; color:#000; font-size:11px;
                         font-weight:700; padding:4px 14px; border-radius:20px; margin-bottom:16px;
                         letter-spacing:1px; text-transform:uppercase; }
-     .tg-hero h1      { font-size:2.4rem; font-weight:900; color:#fff; margin:0 0 14px; line-height:1.2; }
+     .tg-hero h2      { font-size:2.4rem; font-weight:900; color:#fff; margin:0 0 14px; line-height:1.2; }
      .tg-hero p       { font-size:1rem; color:rgba(255,255,255,0.82); max-width:580px; line-height:1.7; }
    Badge text: e.g. "🌏 여행 가이드" or "✈ 해외여행"
-   Mobile: padding:44px 20px; h1 font-size:1.65rem;
+   Mobile: padding:44px 20px; h2 font-size:1.65rem;
 
 ③ tg-overview — 4 quick-info boxes (항공, 숙소, 기간, 예산)
    <span class="tg-label">TRIP OVERVIEW</span>
@@ -524,7 +528,9 @@ STRICTLY FORBIDDEN
 - Skipping any required section
 - Class names without the tg- prefix
 - <script> tags of any kind
-- Fabricated/broken image URLs`
+- Fabricated/broken image URLs
+- <h1> tags anywhere in the content — use <h2> for hero headings
+- Chinese characters (漢字/Hanja) — write ONLY in Korean Hangul (한글)`
 
 // ─── IT News / Tech Info template prompt ─────────────────────────────────────
 export const IT_NEWS_SYSTEM_PROMPT = `You are an expert Korean tech journalist and SEO blog writer
@@ -579,10 +585,10 @@ REQUIRED SECTIONS (exact order)
                         padding:3px 12px; border-radius:4px; letter-spacing:.5px; }
      .it-date         { color:rgba(255,255,255,0.50); font-size:12px; }
      @keyframes it-pulse { 0%,100%{opacity:1} 50%{opacity:0.65} }
-     .it-hero h1      { font-size:2.2rem; font-weight:900; color:#fff; margin:0 0 14px; line-height:1.25; }
+     .it-hero h2      { font-size:2.2rem; font-weight:900; color:#fff; margin:0 0 14px; line-height:1.25; }
      .it-hero-sub     { font-size:1rem; color:rgba(255,255,255,0.78); max-width:600px; line-height:1.75; margin:0; }
    Hero meta content: 🔴 BREAKING badge + category chip (e.g. "AI", "스마트폰", "보안") + date
-   Mobile: padding:40px 20px; h1 font-size:1.6rem;
+   Mobile: padding:40px 20px; h2 font-size:1.6rem;
 
 ③ it-keypoints — Key takeaways (4 bullet highlights)
    <span class="it-label">KEY TAKEAWAYS</span>
@@ -710,7 +716,9 @@ STRICTLY FORBIDDEN
 - Skipping any required section
 - Class names without the it- prefix
 - <script> tags of any kind
-- Fabricated/broken image URLs`
+- Fabricated/broken image URLs
+- <h1> tags anywhere in the content — use <h2> for hero headings
+- Chinese characters (漢字/Hanja) — write ONLY in Korean Hangul (한글)`
 
 // ─── Celebrity concept prompt ────────────────────────────────────────────────
 export const CELEBRITY_SYSTEM_PROMPT = `You are a Korean entertainment blog writer.
