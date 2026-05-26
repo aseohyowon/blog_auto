@@ -411,7 +411,10 @@ export async function POST(req: NextRequest) {
       : buildUserPrompt(sanitized, tone, length, searchText, promptImages)
 
     // Ollama uses a simplified prompt — large system prompts overwhelm small local models
-    const ollamaUserPrompt = buildOllamaUserPrompt(sanitized || celebrity, searchText, promptImages)
+    // Filter out base64 data URLs (SD images) — they are injected later by injectImageEnhancements
+    // and would bloat the prompt beyond the 2B model's context window
+    const ollamaPromptImages = promptImages.filter((img) => !img.url.startsWith('data:'))
+    const ollamaUserPrompt = buildOllamaUserPrompt(sanitized || celebrity, searchText, ollamaPromptImages)
 
     const generateByProvider = async (prompt: string): Promise<GenerationResult> => {
       switch (provider) {
