@@ -162,6 +162,63 @@ STRICTLY FORBIDDEN
 - <h1> tags anywhere in the content — Ghost displays the post title as <h1>; use <h2> for hero and section headings
 - Chinese characters (漢字/Hanja) of any kind — write ONLY in Korean Hangul (한글)`
 
+// ─── Ollama (small local model) system prompt ─────────────────────────────────
+// Very short so 2-B models can actually follow it.
+export const OLLAMA_SYSTEM_PROMPT = [
+  '너는 한국어 블로그 작성 전문가다. 주어진 주제에 대해 구체적이고 상세한 HTML 블로그 포스트를 작성해라.',
+  '',
+  '중요 규칙:',
+  '1. 출력은 HTML만 — 마크다운, 코드 펜스 절대 금지. 첫 글자는 반드시 "<" 이어야 한다.',
+  '2. 한국어로만 작성. 한자(漢字) 사용 금지.',
+  '3. [placeholder], [여기에...], [주제], [전략 A] 같은 템플릿 텍스트 절대 금지 — 주제에 맞는 실제 내용만 작성.',
+  '4. 주어진 주제에 대한 사실적이고 구체적인 내용을 최소 1000자 이상 작성.',
+  '5. h1 태그 사용 금지 — 제목은 모두 h2 또는 h3 태그 사용.',
+  '',
+  'HTML 구조 (이대로 작성):',
+  '<div class="ts-wrap" style="max-width:860px;margin:0 auto;padding:20px 16px;font-family:sans-serif;color:#f4f4f5;background:#111">',
+  '<div class="ts-hero" style="background:#1a1a2e;padding:50px 30px;border-radius:12px;margin-bottom:30px">',
+  '<h2 style="color:#fff;font-size:1.8rem;margin:0 0 12px">실제 제목</h2>',
+  '<p style="color:#aaa;margin:0">실제 부제목 한 문장</p>',
+  '</div>',
+  '<div class="ts-intro" style="margin-bottom:30px">',
+  '<h2>소개 섹션 제목</h2>',
+  '<p>본문 문단 1</p>',
+  '<p>본문 문단 2</p>',
+  '</div>',
+  '<div class="ts-section" style="margin-bottom:30px">',
+  '<h2>섹션 제목</h2>',
+  '<p>내용 단락</p>',
+  '</div>',
+  '<!-- ts-section을 3~5개 더 작성 -->',
+  '<div class="ts-conclusion" style="background:#1a1a2e;padding:30px;border-radius:12px">',
+  '<h2>결론</h2>',
+  '<p>결론 내용</p>',
+  '</div>',
+  '</div>',
+].join('\n')
+
+// ─── Ollama user prompt builder ───────────────────────────────────────────────
+export function buildOllamaUserPrompt(
+  topic: string,
+  searchData?: string,
+  searchImages?: Array<{ url: string; source: string; title: string }>,
+): string {
+  const imageHint = searchImages && searchImages.length > 0
+    ? `\n\n사용할 이미지 URL (아래 URL을 <img src="..."> 에 사용):\n${searchImages.slice(0, 3).map((img, i) => `이미지${i + 1}: ${img.url}`).join('\n')}`
+    : ''
+
+  const searchHint = searchData
+    ? `\n\n참고 자료 (이 정보를 활용하여 사실적인 내용 작성):\n${searchData.slice(0, 800)}`
+    : ''
+
+  return `주제: "${topic}"${searchHint}${imageHint}
+
+위 주제에 대한 상세한 한국어 블로그 포스트 HTML을 작성하세요.
+- [placeholder] 형태의 템플릿 텍스트 절대 사용 금지
+- 주제와 직접 관련된 실제 내용만 작성
+- 본문 텍스트 최소 1000자 이상`
+}
+
 // ─── User prompt builder ───────────────────────────────────────────────────────
 export function buildUserPrompt(
   topic: string,

@@ -15,8 +15,10 @@ import {
   TRAVEL_SYSTEM_PROMPT,
   IT_NEWS_SYSTEM_PROMPT,
   CELEBRITY_SYSTEM_PROMPT,
+  OLLAMA_SYSTEM_PROMPT,
   buildUserPrompt,
   buildCelebrityPrompt,
+  buildOllamaUserPrompt,
 } from '@/lib/openai'
 
 // ── SDK clients (lazy — only created when keys exist) ─────────────────────────
@@ -44,7 +46,73 @@ type SystemPrompt = string
 
 const MIN_BODY_TEXT_LENGTH = 1000
 
-// ── Strip LLM meta-commentary ────────────────────────────────────────────────
+// ── Convert markdown to HTML (for small LLMs that ignore HTML-only rule) ───────
+function convertMarkdownToHtml(text: string): string {
+  const trimmed = text.trim()
+  // Already HTML? return as-is
+  if (trimmed.startsWith('<')) return trimmed
+
+  let out = trimmed
+  // Remove leading separators
+  out = out.replace(/^-{3,}\s*/m, '')
+  // Headers (h1 → h2 per no-h1 policy)
+  out = out.replace(/^#{4,}\s+(.+)$/gm, '<h4>$1</h4>')
+  out = out.replace(/^###\s+(.+)$/gm, '<h3>$1</h3>')
+  out = out.replace(/^##\s+(.+)$/gm, '<h2>$1</h2>')
+  out = out.replace(/^#\s+(.+)$/gm, '<h2>$1</h2>')
+  // Bold / italic
+  out = out.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
+  out = out.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+  out = out.replace(/\*(.+?)\*/g, '<em>$1</em>')
+  // HR
+  out = out.replace(/^-{3,}$/gm, '<hr>')
+
+  const lines = out.split('\n')
+  const result: string[] = ['<div class="ts-wrap" style="max-width:860px;margin:0 auto;padding:20px 16px;font-family:sans-serif;color:#f4f4f5;background:#111">']
+  let inUl = false
+  let inOl = false
+
+  for (const line of lines) {
+    const t = line.trim()
+    if (!t) {
+      if (inUl) { result.push('</ul>'); inUl = false }
+      if (inOl) { result.push('</ol>'); inOl = false }
+      continue
+    }
+    if (/^[*-]\s/.test(t)) {
+      if (inOl) { result.push('</ol>'); inOl = false }
+      if (!inUl) { result.push('<ul>'); inUl = true }
+      result.push(`<li>${t.slice(2).trim()}</li>`)
+    } else if (/^\d+\.\s/.test(t)) {
+      if (inUl) { result.push('</ul>'); inUl = false }
+      if (!inOl) { result.push('<ol>'); inOl = true }
+      result.push(`<li>${t.replace(/^\d+\.\s/, '')}</li>`)
+    } else {
+      if (inUl) { result.push('</ul>'); inUl = false }
+      if (inOl) { result.push('</ol>'); inOl = false }
+      if (/^<(h[1-6]|hr|ul|ol|li|p|div|blockquote|section|article)/i.test(t)) {
+        result.push(t)
+      } else {
+        result.push(`<p>${t}</p>`)
+      }
+    }
+  }
+  if (inUl) result.push('</ul>')
+  if (inOl) result.push('</ol>')
+  result.push('</div>')
+  return result.join('\n')
+}
+
+// ── Detect LLM template placeholders ─────────────────────────────────────────
+// Small models sometimes output generic templates with [여기에...], [전략 A] etc.
+// Matches Korean/English bracket placeholders of length 2–40 chars.
+const PLACEHOLDER_RE = /\[[가-힣\w\s]{2,40}\]/g
+function hasTemplatePlaceholders(text: string): boolean {
+  const matches = text.match(PLACEHOLDER_RE)
+  return (matches?.length ?? 0) >= 3
+}
+
+// ── Strip LLM meta-commentary ──────────────────────────────────────────────────
 // Local LLMs (e.g. gemma4:e2b) often inject disclaimers like
 // "주의: 이 내용은 텍스트 기반으로 생성되었으며 이미지에 대한 접근 권한이 없습니다"
 // or wrap output in markdown code fences. Remove these artefacts.
@@ -330,12 +398,15 @@ export async function POST(req: NextRequest) {
       ? buildCelebrityPrompt(celebrity, tone, imageCount, searchText, promptImages, preferredImages)
       : buildUserPrompt(sanitized, tone, length, searchText, promptImages)
 
+    // Ollama uses a simplified prompt — large system prompts overwhelm small local models
+    const ollamaUserPrompt = buildOllamaUserPrompt(sanitized || celebrity, searchText, promptImages)
+
     const generateByProvider = async (prompt: string): Promise<GenerationResult> => {
       switch (provider) {
         case 'ollama':
           return generateWithOllama({
             model: modelName,
-            systemPrompt,
+            systemPrompt: OLLAMA_SYSTEM_PROMPT,
             userPrompt: prompt,
           })
         case 'gemini':
@@ -348,15 +419,20 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    let result = await generateByProvider(userPrompt)
+    // Ollama uses its own simplified prompt; other providers use the full userPrompt
+    let result = await generateByProvider(provider === 'ollama' ? ollamaUserPrompt : userPrompt)
+
+    // Convert markdown output to HTML (small models often ignore the HTML-only rule)
+    result = { ...result, html: convertMarkdownToHtml(result.html) }
+
     let bodyLength = getBodyTextLength(result.html)
 
     const MAX_LENGTH_RETRIES = 3
     for (let attempt = 1; attempt <= MAX_LENGTH_RETRIES && bodyLength < MIN_BODY_TEXT_LENGTH; attempt += 1) {
-      const retryPrompt = buildLengthRetryPrompt(userPrompt, bodyLength, attempt)
+      const retryPrompt = provider === 'ollama' ? ollamaUserPrompt : buildLengthRetryPrompt(userPrompt, bodyLength, attempt)
       const retryResult = await generateByProvider(retryPrompt)
       result = {
-        html: retryResult.html,
+        html: convertMarkdownToHtml(retryResult.html),
         totalTokens: result.totalTokens + retryResult.totalTokens,
       }
       bodyLength = getBodyTextLength(result.html)
@@ -372,6 +448,14 @@ export async function POST(req: NextRequest) {
     if (bodyLength < MIN_BODY_TEXT_LENGTH) {
       return NextResponse.json(
         { error: `생성된 글 본문이 너무 짧습니다. 현재 ${bodyLength}자이며 최소 ${MIN_BODY_TEXT_LENGTH}자 이상이어야 합니다. 다시 시도해주세요.` },
+        { status: 422 },
+      )
+    }
+
+    // Reject template-placeholder output (e.g. gemma4:e2b generating [전략 A의 주요 내용])
+    if (hasTemplatePlaceholders(stripHtmlToText(result.html))) {
+      return NextResponse.json(
+        { error: '모델이 실제 내용 대신 템플릿 형식([placeholder])을 생성했습니다. 다시 시도하거나 다른 모델을 선택해주세요.' },
         { status: 422 },
       )
     }
