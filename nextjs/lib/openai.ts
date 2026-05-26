@@ -216,7 +216,22 @@ export function buildOllamaUserPrompt(
 위 주제에 대한 상세한 한국어 블로그 포스트 HTML을 작성하세요.
 - [placeholder] 형태의 템플릿 텍스트 절대 사용 금지
 - 주제와 직접 관련된 실제 내용만 작성
-- 본문 텍스트 최소 1000자 이상`
+- 소개(ts-intro) + 본문 섹션(ts-section) 최소 4개 + 결론(ts-conclusion) 반드시 포함
+- 각 섹션마다 구체적인 내용을 2~3 문단씩 작성`
+}
+
+export function buildOllamaLengthRetryPrompt(topic: string, currentLength: number): string {
+  const missing = Math.max(0, 500 - currentLength)
+  return `주제: "${topic}"
+
+이전에 생성한 내용이 너무 짧습니다 (${currentLength}자). 아래 요구사항을 지켜서 더 풍부한 HTML을 다시 작성하세요.
+
+1. 소개(ts-intro) 섹션: 구체적인 설명 3~4 문단
+2. 본문(ts-section) 섹션: 최소 5개, 각 섹션마다 2~3 문단
+3. 결론(ts-conclusion) 섹션: 1~2 문단
+4. 총 본문 텍스트 최소 500자 (현재 ${missing}자 이상 추가 필요)
+5. HTML 태그만 출력. [placeholder] 텍스트 사용 금지.
+6. 주제에 대한 실제 구체적인 정보 포함.`
 }
 
 // ─── User prompt builder ───────────────────────────────────────────────────────

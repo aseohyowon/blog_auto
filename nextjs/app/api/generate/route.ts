@@ -19,6 +19,7 @@ import {
   buildUserPrompt,
   buildCelebrityPrompt,
   buildOllamaUserPrompt,
+  buildOllamaLengthRetryPrompt,
 } from '@/lib/openai'
 
 // ── SDK clients (lazy — only created when keys exist) ─────────────────────────
@@ -45,6 +46,7 @@ interface GenerationResult {
 type SystemPrompt = string
 
 const MIN_BODY_TEXT_LENGTH = 1000
+const MIN_BODY_TEXT_LENGTH_OLLAMA = 500 // 2B small models have limited output capacity
 
 // ── Convert markdown to HTML (for small LLMs that ignore HTML-only rule) ───────
 function convertMarkdownToHtml(text: string): string {
@@ -437,9 +439,12 @@ export async function POST(req: NextRequest) {
 
     let bodyLength = getBodyTextLength(result.html)
 
+    const minLength = provider === 'ollama' ? MIN_BODY_TEXT_LENGTH_OLLAMA : MIN_BODY_TEXT_LENGTH
     const MAX_LENGTH_RETRIES = 3
-    for (let attempt = 1; attempt <= MAX_LENGTH_RETRIES && bodyLength < MIN_BODY_TEXT_LENGTH; attempt += 1) {
-      const retryPrompt = provider === 'ollama' ? ollamaUserPrompt : buildLengthRetryPrompt(userPrompt, bodyLength, attempt)
+    for (let attempt = 1; attempt <= MAX_LENGTH_RETRIES && bodyLength < minLength; attempt += 1) {
+      const retryPrompt = provider === 'ollama'
+        ? buildOllamaLengthRetryPrompt(sanitized || celebrity, bodyLength)
+        : buildLengthRetryPrompt(userPrompt, bodyLength, attempt)
       const retryResult = await generateByProvider(retryPrompt)
       result = {
         html: convertMarkdownToHtml(retryResult.html),
@@ -455,9 +460,9 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    if (bodyLength < MIN_BODY_TEXT_LENGTH) {
+    if (bodyLength < minLength) {
       return NextResponse.json(
-        { error: `생성된 글 본문이 너무 짧습니다. 현재 ${bodyLength}자이며 최소 ${MIN_BODY_TEXT_LENGTH}자 이상이어야 합니다. 다시 시도해주세요.` },
+        { error: `생성된 글 본문이 너무 짧습니다. 현재 ${bodyLength}자이며 최소 ${minLength}자 이상이어야 합니다. 다시 시도해주세요.` },
         { status: 422 },
       )
     }
