@@ -103,6 +103,16 @@ function convertMarkdownToHtml(text: string): string {
   return result.join('\n')
 }
 
+// ── Remove duplicate title from hero section ──────────────────────────────────
+// Ghost already shows the post title as <h1> above the content.
+// Any <h2> or <h1> inside the .ts-hero block is a duplicate — remove it.
+function removeHeroDuplicateTitle(html: string): string {
+  return html.replace(
+    /(<div[^>]*class="[^"]*ts-hero[^"]*"[^>]*>(?:<div[^>]*>)?)\s*<h[12][^>]*>[\s\S]*?<\/h[12]>\s*/i,
+    '$1',
+  )
+}
+
 // ── Detect LLM template placeholders ─────────────────────────────────────────
 // Small models sometimes output generic templates with [여기에...], [전략 A] etc.
 // Matches Korean/English bracket placeholders of length 2–40 chars.
@@ -461,6 +471,7 @@ export async function POST(req: NextRequest) {
     }
 
     result = { ...result, html: stripLlmMetaCommentary(result.html) }
+    result = { ...result, html: removeHeroDuplicateTitle(result.html) }
 
     const enhancedHtml = injectImageEnhancements(result.html, imageCandidates)
 

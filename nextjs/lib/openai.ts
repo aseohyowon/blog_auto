@@ -48,24 +48,24 @@ REQUIRED SECTIONS (exact order)
    All selectors MUST be prefixed with .ts-
    Include @media (max-width:600px) responsive rules for every grid/flex layout
 
-② ts-hero — Full-width hero banner with image + gradient overlay + title
+② ts-hero — Full-width hero banner with image + gradient overlay
    Use the IMAGES rules for the background-image URL.
+   IMPORTANT: Ghost CMS already displays the post title as <h1> above the content.
+   DO NOT repeat the post title inside the hero — it will appear twice on the page.
    HTML structure:
      <div class="ts-hero">
        <div class="ts-hero-inner">
-         <h2>…keyword-rich title…</h2>
-         <p>…subtitle / hook sentence…</p>
+         <p class="ts-hero-subtitle">…engaging subtitle or hook sentence (NOT the post title)…</p>
        </div>
      </div>
    CSS:
-     .ts-hero         { position:relative; min-height:540px; border-radius:16px; overflow:hidden;
-                        margin-bottom:40px; background-image:url("…"); background-size:cover; background-position:center; }
-     .ts-hero::before { content:""; position:absolute; inset:0;
-                        background:linear-gradient(135deg,rgba(0,0,0,0.82) 0%,rgba(160,0,0,0.42) 100%); }
-     .ts-hero-inner   { position:relative; z-index:1; padding:70px 44px; }
-     .ts-hero h2      { font-size:2.4rem; font-weight:900; color:#fff; margin:0 0 14px; line-height:1.2; }
-     .ts-hero p       { font-size:1rem; color:rgba(255,255,255,0.80); margin:0; max-width:580px; line-height:1.7; }
-   Mobile: padding:44px 20px; h2 font-size:1.6rem;
+     .ts-hero          { position:relative; min-height:540px; border-radius:16px; overflow:hidden;
+                         margin-bottom:40px; background-image:url("…"); background-size:cover; background-position:center; }
+     .ts-hero::before  { content:""; position:absolute; inset:0;
+                         background:linear-gradient(135deg,rgba(0,0,0,0.82) 0%,rgba(160,0,0,0.42) 100%); }
+     .ts-hero-inner    { position:relative; z-index:1; padding:70px 44px; }
+     .ts-hero-subtitle { font-size:1.25rem; font-weight:500; color:rgba(255,255,255,0.88); margin:0; max-width:620px; line-height:1.75; }
+   Mobile: padding:44px 20px; .ts-hero-subtitle font-size:1rem;
 
 ③ ts-intro — Introduction section
    <span class="ts-label">INTRODUCTION</span>
