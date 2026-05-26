@@ -689,13 +689,17 @@ export default function Generator() {
   }, [sdModel])
 
   useEffect(() => {
+    void checkComfyUIModels()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
     if (provider === 'ollama') {
       void checkOllamaConnection(false)
-      void checkComfyUIModels()
     } else {
       setOllamaStatus('')
     }
-  }, [provider, checkOllamaConnection, checkComfyUIModels])
+  }, [provider, checkOllamaConnection])
 
   const fetchSafeImages = useCallback(async (name?: string, count?: number) => {
     const query = (name ?? celebrity).trim()
@@ -851,7 +855,7 @@ export default function Generator() {
           celebrity,
           imageCount,
           selectedImages,
-          sdModel: provider === 'ollama' && sdModel ? sdModel : undefined,
+          sdModel: sdModel || undefined,
         }),
       })
 
@@ -1016,59 +1020,56 @@ export default function Generator() {
             ))}
           </div>
           {provider === 'ollama' && (
-            <div className="flex flex-col gap-3">
-              {/* Ollama 연결 확인 */}
-              <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-zinc-800 bg-zinc-950/70 px-4 py-3">
-                <button
-                  type="button"
-                  onClick={() => void checkOllamaConnection(true)}
-                  disabled={ollamaChecking}
-                  className="inline-flex items-center gap-2 rounded-xl border border-zinc-700 bg-zinc-900 px-3.5 py-2 text-xs font-semibold text-zinc-200 hover:border-red-600 hover:text-red-300 disabled:opacity-60"
-                >
-                  {ollamaChecking ? '확인 중...' : 'Ollama 연결 확인'}
-                </button>
-                <p className="text-xs text-zinc-400">
-                  {ollamaStatus || '로컬 Ollama 상태를 확인할 수 있습니다.'}
-                </p>
-              </div>
-
-              {/* ComfyUI SD 이미지 모델 선택 */}
-              <div className="rounded-2xl border border-purple-900/40 bg-purple-950/20 px-4 py-3 flex flex-col gap-2">
-                <div className="flex items-center gap-3">
-                  <span className="text-[10px] font-bold text-purple-400 uppercase tracking-widest">🎨 SD 이미지 모델 (ComfyUI)</span>
-                  <button
-                    type="button"
-                    onClick={() => void checkComfyUIModels()}
-                    disabled={sdChecking}
-                    className="inline-flex items-center gap-1.5 rounded-xl border border-purple-900/50 bg-purple-950/40 px-2.5 py-1 text-[11px] font-semibold text-purple-300 hover:border-purple-600 disabled:opacity-60"
-                  >
-                    {sdChecking ? '확인 중...' : '새로고침'}
-                  </button>
-                  <p className="text-[11px] text-purple-400/70">{sdStatus}</p>
-                </div>
-                {sdModels.length > 0 ? (
-                  <div className="flex gap-2 flex-wrap">
-                    {sdModels.map((m) => (
-                      <button
-                        key={m}
-                        type="button"
-                        onClick={() => setSdModel(m)}
-                        className={`px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all ${
-                          sdModel === m
-                            ? 'border-purple-600 bg-purple-600/15 text-purple-300'
-                            : 'border-zinc-700 bg-zinc-900 text-zinc-400 hover:border-purple-700 hover:text-purple-300'
-                        }`}
-                      >
-                        {m.replace(/\.safetensors$/, '').replace(/\.ckpt$/, '')}
-                      </button>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-[11px] text-zinc-500">ComfyUI가 실행 중이어야 모델 목록이 표시됩니다. (port 8188)</p>
-                )}
-              </div>
+            <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-zinc-800 bg-zinc-950/70 px-4 py-3">
+              <button
+                type="button"
+                onClick={() => void checkOllamaConnection(true)}
+                disabled={ollamaChecking}
+                className="inline-flex items-center gap-2 rounded-xl border border-zinc-700 bg-zinc-900 px-3.5 py-2 text-xs font-semibold text-zinc-200 hover:border-red-600 hover:text-red-300 disabled:opacity-60"
+              >
+                {ollamaChecking ? '확인 중...' : 'Ollama 연결 확인'}
+              </button>
+              <p className="text-xs text-zinc-400">
+                {ollamaStatus || '로컬 Ollama 상태를 확인할 수 있습니다.'}
+              </p>
             </div>
           )}
+
+          {/* ComfyUI SD 이미지 모델 선택 — 모든 프로바이더에서 표시 */}
+          <div className="rounded-2xl border border-purple-900/40 bg-purple-950/20 px-4 py-3 flex flex-col gap-2">
+            <div className="flex items-center gap-3">
+              <span className="text-[10px] font-bold text-purple-400 uppercase tracking-widest">🎨 SD 이미지 모델 (ComfyUI)</span>
+              <button
+                type="button"
+                onClick={() => void checkComfyUIModels()}
+                disabled={sdChecking}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-purple-900/50 bg-purple-950/40 px-2.5 py-1 text-[11px] font-semibold text-purple-300 hover:border-purple-600 disabled:opacity-60"
+              >
+                {sdChecking ? '확인 중...' : '새로고침'}
+              </button>
+              <p className="text-[11px] text-purple-400/70">{sdStatus}</p>
+            </div>
+            {sdModels.length > 0 ? (
+              <div className="flex gap-2 flex-wrap">
+                {sdModels.map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setSdModel(m)}
+                    className={`px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all ${
+                      sdModel === m
+                        ? 'border-purple-600 bg-purple-600/15 text-purple-300'
+                        : 'border-zinc-700 bg-zinc-900 text-zinc-400 hover:border-purple-700 hover:text-purple-300'
+                    }`}
+                  >
+                    {m.replace(/\.safetensors$/, '').replace(/\.ckpt$/, '')}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p className="text-[11px] text-zinc-500">ComfyUI가 실행 중이어야 모델 목록이 표시됩니다. (port 8188)</p>
+            )}
+          </div>
         </section>
 
         {/* ── Settings row ─────────────────────────────────────────────── */}
