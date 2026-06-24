@@ -37,6 +37,80 @@ function stripHtmlToText(rawHtml: string): string {
     .trim()
 }
 
+/**
+ * Clean generated HTML for Ghost compatibility:
+ * - Remove <style> block (Ghost sanitizer rejects it)
+ * - Extract content from wrapper div (ts-wrap, rv-wrap, tg-wrap, it-wrap)
+ * - Remove wrapper div itself, keep inner content
+ * - Convert CSS background-image hero to <img> tag
+ * - Ensure all images have proper attributes
+ */
+function cleanHtmlForGhost(rawHtml: string): string {
+  if (!rawHtml) return ''
+  
+  let cleaned = rawHtml.replace(/<style[\s\S]*?<\/style>/gi, '')
+  cleaned = cleaned.replace(/<script[\s\S]*?<\/script>/gi, '')
+  
+  const parser = new DOMParser()
+  const doc = parser.parseFromString(cleaned, 'text/html')
+  
+  const wrapperSelectors = ['.ts-wrap', '.rv-wrap', '.tg-wrap', '.it-wrap', '.celebrity-wrap']
+  let contentNode: Element | null = null
+  
+  for (const selector of wrapperSelectors) {
+    contentNode = doc.querySelector(selector)
+    if (contentNode) break
+  }
+  
+  if (!contentNode) {
+    contentNode = doc.querySelector('body') || doc.querySelector('div')
+  }
+  
+  if (!contentNode) {
+    return cleaned.trim()
+  }
+  
+  const heroElements = contentNode.querySelectorAll('[class*="hero"]')
+  heroElements.forEach((hero) => {
+    const style = hero.getAttribute('style') || ''
+    const bgMatch = style.match(/background-image\s*:\s*url\(["']?([^"')]+)["']?\)/i)
+    if (bgMatch && bgMatch[1]) {
+      const imgUrl = bgMatch[1]
+      const img = doc.createElement('img')
+      img.src = imgUrl
+      img.alt = 'Hero image'
+      img.style.cssText = 'width:100%;height:auto;object-fit:cover;max-height:500px;display:block;'
+      hero.insertBefore(img, hero.firstChild)
+    }
+  })
+  
+  const images = contentNode.querySelectorAll('img')
+  images.forEach((img) => {
+    if (!img.style.width) img.style.width = '100%'
+    if (!img.style.height) img.style.height = 'auto'
+    if (!img.style.objectFit) img.style.objectFit = 'cover'
+    if (!img.style.maxHeight) img.style.maxHeight = '500px'
+    const style = img.getAttribute('style') || ''
+    const cleanStyle = style
+      .replace(/background-image\s*:[^;]*;?/gi, '')
+      .replace(/background\s*:[^;]*;?/gi, '')
+    img.setAttribute('style', cleanStyle.trim())
+  })
+  
+  const allWithBg = contentNode.querySelectorAll('[style*="background-image"]')
+  allWithBg.forEach((el) => {
+    const style = el.getAttribute('style') || ''
+    const cleanStyle = style.replace(/background-image\s*:[^;]*;?/gi, '').replace(/background\s*:[^;]*;?/gi, '')
+    if (cleanStyle.trim()) {
+      el.setAttribute('style', cleanStyle.trim())
+    } else {
+      el.removeAttribute('style')
+    }
+  })
+  
+  return contentNode.innerHTML.trim()
+}
+
 function parseTagInput(value: string): string[] {
   const seen = new Set<string>()
   const tags: string[] = []
@@ -206,16 +280,18 @@ export default function OutputPanel({ html, loading, tokens, topic, showToast }:
     setGhostResult(null)
 
     try {
+      const ghostHtml = cleanHtmlForGhost(html)
+      
       const res = await fetch('/api/ghost/posts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title,
-          html,
+          html: ghostHtml,
           excerpt: ghostExcerpt.trim(),
           tags: parseTagInput(ghostTagsInput),
           status,
-          featureImage: extractFirstImageSrc(html),
+          featureImage: extractFirstImageSrc(ghostHtml),
         }),
       })
 

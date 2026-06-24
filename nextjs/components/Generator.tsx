@@ -425,7 +425,7 @@ export default function Generator() {
   const [officialSourcesNote, setOfficialSourcesNote] = useState('')
   const [tone,        setTone]        = useState<string>(TONES[0])
   const [length,      setLength]      = useState<Length>('medium')
-  const [provider,    setProvider]    = useState('groq')
+  const [provider,    setProvider]    = useState('ollama')
   const [model,       setModel]       = useState('llama-3.3-70b-versatile')
   const [html,        setHtml]        = useState('')
   const [loading,     setLoading]     = useState(false)
@@ -433,9 +433,16 @@ export default function Generator() {
   const [ollamaStatus, setOllamaStatus] = useState('')
   const [ollamaChecking, setOllamaChecking] = useState(false)
   const [tokens,      setTokens]      = useState<number | null>(null)
+  const [groqRateLimit, setGroqRateLimit] = useState<{
+    limitTokens: number
+    remainingTokens: number
+    limitRequests: number
+    remainingRequests: number
+    resetSeconds: number
+  } | null>(null)
   const [lastGeneratedType, setLastGeneratedType] = useState<BlogType | null>(null)
-  const [lastGeneralTopic, setLastGeneralTopic] = useState('')
-  const [lastGeneralHtml, setLastGeneralHtml] = useState('')
+  const [lastGeneratedTopic, setLastGeneratedTopic] = useState('')
+  const [lastGeneratedHtml, setLastGeneratedHtml] = useState('')
   const [transforming, setTransforming] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
   const [showPremium, setShowPremium] = useState(false)
@@ -497,7 +504,18 @@ export default function Generator() {
     } else if (prov?.models[0]) {
       setModel(prov.models[0].value)
     }
-    setOllamaStatus(id === 'ollama' ? 'Ollama 연결 상태를 확인 중입니다.' : '')
+    // Initialize Groq rate limit display with default values when Groq is selected
+    if (id === 'groq') {
+      setGroqRateLimit({
+        limitTokens: 12000,
+        remainingTokens: 12000,
+        limitRequests: 30,
+        remainingRequests: 30,
+        resetSeconds: 60,
+      })
+    } else {
+      setGroqRateLimit(null)
+    }
   }
 
   const checkOllamaConnection = useCallback(async (manual = false) => {
@@ -864,6 +882,13 @@ export default function Generator() {
         error?: string
         retryAfter?: number
         usage?: { total_tokens?: number }
+        groqRateLimit?: {
+          limitTokens: number
+          remainingTokens: number
+          limitRequests: number
+          remainingRequests: number
+          resetSeconds: number
+        }
       }
 
       if (!res.ok) {
@@ -875,6 +900,9 @@ export default function Generator() {
 
       const generatedHtml   = data.html ?? ''
       const generatedTokens = data.usage?.total_tokens ?? null
+      if (data.groqRateLimit) {
+        setGroqRateLimit(data.groqRateLimit)
+      }
       const resolvedTopic = isCelebrityMode
         ? `${celebrity} 소개글`
         : trimmed
@@ -882,9 +910,9 @@ export default function Generator() {
       setHtml(generatedHtml)
       setTokens(generatedTokens)
       setLastGeneratedType(blogType)
-      if (blogType === 'general' && generatedHtml) {
-        setLastGeneralHtml(generatedHtml)
-        setLastGeneralTopic(trimmed)
+      if (generatedHtml) {
+        setLastGeneratedHtml(generatedHtml)
+        setLastGeneratedTopic(resolvedTopic)
       }
       if (isCelebrityMode) setTopic(resolvedTopic)
 
@@ -900,8 +928,8 @@ export default function Generator() {
 
   // Client-side conversion: no API call, no token usage.
   const convertPreviousGeneralToItNews = () => {
-    const sourceHtml = lastGeneralHtml || (lastGeneratedType === 'general' ? html : '')
-    const sourceTopic = lastGeneralTopic || topic
+    const sourceHtml = lastGeneratedHtml || html
+    const sourceTopic = lastGeneratedTopic || topic
 
     if (!sourceHtml.trim()) {
       setError('먼저 기본 블로그를 생성한 뒤 변환해주세요.')
@@ -1034,42 +1062,68 @@ export default function Generator() {
               </p>
             </div>
           )}
-
-          {/* ComfyUI SD 이미지 모델 선택 — 모든 프로바이더에서 표시 */}
-          <div className="rounded-2xl border border-purple-900/40 bg-purple-950/20 px-4 py-3 flex flex-col gap-2">
-            <div className="flex items-center gap-3">
-              <span className="text-[10px] font-bold text-purple-400 uppercase tracking-widest">🎨 SD 이미지 모델 (ComfyUI)</span>
-              <button
-                type="button"
-                onClick={() => void checkComfyUIModels()}
-                disabled={sdChecking}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-purple-900/50 bg-purple-950/40 px-2.5 py-1 text-[11px] font-semibold text-purple-300 hover:border-purple-600 disabled:opacity-60"
-              >
-                {sdChecking ? '확인 중...' : '새로고침'}
-              </button>
-              <p className="text-[11px] text-purple-400/70">{sdStatus}</p>
-            </div>
-            {sdModels.length > 0 ? (
-              <div className="flex gap-2 flex-wrap">
-                {sdModels.map((m) => (
-                  <button
-                    key={m}
-                    type="button"
-                    onClick={() => setSdModel(m)}
-                    className={`px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all ${
-                      sdModel === m
-                        ? 'border-purple-600 bg-purple-600/15 text-purple-300'
-                        : 'border-zinc-700 bg-zinc-900 text-zinc-400 hover:border-purple-700 hover:text-purple-300'
-                    }`}
-                  >
-                    {m.replace(/\.safetensors$/, '').replace(/\.ckpt$/, '')}
-                  </button>
-                ))}
+          
+          {/* Groq Free TPM 사용량 표시 */}
+          {provider === 'groq' && groqRateLimit && (
+            <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-amber-900/40 bg-amber-950/20 px-4 py-3">
+              <div className="flex items-center gap-2 text-[11px] font-mono">
+                <span className="text-amber-400">⚡ TPM:</span>
+                <span className="text-amber-300 font-bold">{groqRateLimit.remainingTokens.toLocaleString()}</span>
+                <span className="text-zinc-500">/</span>
+                <span className="text-zinc-400">{groqRateLimit.limitTokens.toLocaleString()}</span>
+                <span className="text-zinc-600">tokens</span>
               </div>
-            ) : (
-              <p className="text-[11px] text-zinc-500">ComfyUI가 실행 중이어야 모델 목록이 표시됩니다. (port 8188)</p>
-            )}
-          </div>
+              <div className="flex items-center gap-2 text-[11px] font-mono text-zinc-400">
+                <span>요청: {groqRateLimit.remainingRequests}/{groqRateLimit.limitRequests}</span>
+                <span className="text-zinc-600">·</span>
+                <span>초기화: ~{groqRateLimit.resetSeconds}s</span>
+              </div>
+              <div className="w-full h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-amber-500 to-red-500 transition-all duration-300"
+                  style={{ width: `${Math.max(0, Math.min(100, (groqRateLimit.remainingTokens / groqRateLimit.limitTokens) * 100))}%` }}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* ComfyUI SD 이미지 모델 선택 — Local Ollama 선택 시에만 표시 */}
+          {provider === 'ollama' && (
+            <div className="rounded-2xl border border-purple-900/40 bg-purple-950/20 px-4 py-3 flex flex-col gap-2">
+              <div className="flex items-center gap-3">
+                <span className="text-[10px] font-bold text-purple-400 uppercase tracking-widest">🎨 SD 이미지 모델 (ComfyUI)</span>
+                <button
+                  type="button"
+                  onClick={() => void checkComfyUIModels()}
+                  disabled={sdChecking}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-purple-900/50 bg-purple-950/40 px-2.5 py-1 text-[11px] font-semibold text-purple-300 hover:border-purple-600 disabled:opacity-60"
+                >
+                  {sdChecking ? '확인 중...' : '새로고침'}
+                </button>
+                <p className="text-[11px] text-purple-400/70">{sdStatus}</p>
+              </div>
+              {sdModels.length > 0 ? (
+                <div className="flex gap-2 flex-wrap">
+                  {sdModels.map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setSdModel(m)}
+                      className={`px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all ${
+                        sdModel === m
+                          ? 'border-purple-600 bg-purple-600/15 text-purple-300'
+                          : 'border-zinc-700 bg-zinc-900 text-zinc-400 hover:border-purple-700 hover:text-purple-300'
+                      }`}
+                    >
+                      {m.replace(/\.safetensors$/, '').replace(/\.ckpt$/, '')}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-[11px] text-zinc-500">ComfyUI가 실행 중이어야 모델 목록이 표시됩니다. (port 8188)</p>
+              )}
+            </div>
+          )}
         </section>
 
         {/* ── Settings row ─────────────────────────────────────────────── */}

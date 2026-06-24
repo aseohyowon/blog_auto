@@ -81,6 +81,7 @@ async function fetchWithTimeout(url, options, timeoutMs) {
     if (isConnectionFailure(error)) {
       throw createError(OLLAMA_NOT_RUNNING_MESSAGE, 503)
     }
+    // Return actual error message for debugging
     throw createError(`Ollama 오류: ${errMsg}`, 500)
   } finally {
     clearTimeout(timeoutId)
@@ -157,7 +158,7 @@ export async function generateWithOllama({ systemPrompt, userPrompt, model }) {
         stream: true,
         options: {
           temperature: 0.75,
-          num_predict: 8192,
+          num_predict: 16384,
         },
       }),
     },
@@ -171,7 +172,7 @@ export async function generateWithOllama({ systemPrompt, userPrompt, model }) {
       : typeof errorBody?.message === 'string'
         ? errorBody.message
         : OLLAMA_SLOW_MESSAGE
-    throw createError(message, response.status)
+    throw createError(`Ollama 오류: ${message}`, response.status)
   }
 
   return parseOllamaStream(response)

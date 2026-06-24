@@ -69,7 +69,7 @@ async function generatePost(schedule: any, topic: string) {
       tone: schedule.tone || '정보 전달형',
       length: schedule.length || 'medium',
       model: schedule.model || 'llama-3.3-70b-versatile',
-      provider: schedule.provider || 'groq',
+      provider: schedule.provider || 'ollama',
       blogType: schedule.blogType || 'general',
       imageCount: 6,
       selectedImages: [],

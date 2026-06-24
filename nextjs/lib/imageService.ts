@@ -308,17 +308,31 @@ async function searchWikimedia(query: string, limit: number): Promise<Array<Omit
   const pages = Object.values(data.query?.pages ?? {})
   return pages.map((page) => {
     const info = page.imageinfo?.[0]
+    const rawUrl = info?.thumburl || info?.url || ''
+    const rawTitle = page.title || ''
     return {
-      url: optimizeImageUrl(info?.thumburl || info?.url || ''),
+      url: optimizeImageUrl(rawUrl),
       pageUrl: info?.descriptionurl || page.canonicalurl || '',
-      title: info?.extmetadata?.ObjectName?.value || page.title?.replace(/^File:/, '') || query,
+      title: info?.extmetadata?.ObjectName?.value || rawTitle.replace(/^File:/, '') || query,
       provider: 'wikimedia' as const,
       sourceLabel: 'Wikimedia Commons',
       license: info?.extmetadata?.LicenseShortName?.value || 'Wikimedia Commons License',
       author: info?.extmetadata?.Artist?.value || '',
       keyword: query,
+      _rawUrl: rawUrl,
+      _rawTitle: rawTitle,
     }
-  }).filter((item) => item.url && item.pageUrl)
+  }).filter((item) => {
+    if (!item.url || !item.pageUrl) return false
+    // PDF 스캔, 오래된 문서, 신문 아카이브 제외
+    const lowerUrl = item._rawUrl.toLowerCase()
+    const lowerTitle = item._rawTitle.toLowerCase()
+    if (lowerUrl.includes('.pdf')) return false
+    if (/\b(18|19)\d{2}-\d{2}-\d{2}\b/.test(item._rawTitle)) return false
+    if (/\.(svg|tif|tiff|djvu|ogg|ogv|webm|mp3|wav|pdf)(\.|$)/i.test(lowerUrl)) return false
+    if (lowerTitle.includes('newspaper') || lowerTitle.includes('archive')) return false
+    return true
+  }).map(({ _rawUrl: _u, _rawTitle: _t, ...rest }) => rest)
 }
 
 async function searchYoutubeThumbnails(query: string, limit: number): Promise<Array<Omit<ImageCandidate, 'relevanceScore'>>> {
@@ -470,38 +484,66 @@ async function generateWithLocalSD(query: string, sdModelOverride?: string, blog
   const negativePrompt = buildSdNegativePrompt(blogType)
   const width = Number(process.env.SD_WIDTH || 512)
   const height = Number(process.env.SD_HEIGHT || 512)
-  const steps = Number(process.env.SD_STEPS || 10)
-  const cfgScale = Number(process.env.SD_CFG_SCALE || 7)
   const model = sdModelOverride || process.env.SD_MODEL_CHECKPOINT || 'DreamShaper8_LCM.safetensors'
-  const timeout = Number(process.env.SD_TIMEOUT_MS || 300_000) // CPU는 느려서 5분
+  const timeout = Number(process.env.SD_TIMEOUT_MS || 900_000) // FLUX.1-schnell fp8 느린 경우 15분
+
+  // Flux 모델 자동 감지 (flux1, flux2, flux-2, flux_2 등)
+  const isFlux = /flux/i.test(model)
+
+  const steps = Number(process.env.SD_STEPS || (isFlux ? 4 : 10))
+  const cfgScale = Number(process.env.SD_CFG_SCALE || (isFlux ? 1.0 : 7))
+  const seed = Math.floor(Math.random() * 1e9)
 
   // ComfyUI workflow (node graph)
-  const workflow = {
-    '4': { class_type: 'CheckpointLoaderSimple', inputs: { ckpt_name: model } },
-    '5': { class_type: 'EmptyLatentImage', inputs: { width, height, batch_size: 1 } },
-    '6': { class_type: 'CLIPTextEncode', inputs: { text: positivePrompt, clip: ['4', 1] } },
-    '7': { class_type: 'CLIPTextEncode', inputs: { text: negativePrompt, clip: ['4', 1] } },
-    '3': {
-      class_type: 'KSampler',
-      inputs: {
-        seed: Math.floor(Math.random() * 1e9),
-        steps,
-        cfg: cfgScale,
-        sampler_name: 'dpmpp_2m',
-        scheduler: 'karras',
-        denoise: 1,
-        model: ['4', 0],
-        positive: ['6', 0],
-        negative: ['7', 0],
-        latent_image: ['5', 0],
-      },
-    },
-    '8': { class_type: 'VAEDecode', inputs: { samples: ['3', 0], vae: ['4', 2] } },
-    '9': { class_type: 'SaveImage', inputs: { filename_prefix: 'blog-ai', images: ['8', 0] } },
-  }
+  // Flux: UNETLoader + DualCLIPLoader + VAELoader (별도 CLIP/VAE 파일 필요)
+  //       euler + simple scheduler + cfg≈1.0, 네거티브 프롬프트 무시됨
+  // SD1.5/SDXL: CheckpointLoaderSimple + dpmpp_2m + karras + cfg≈7
+  const fluxClipT5 = process.env.SD_FLUX_CLIP_T5 || 't5xxl_fp8_e4m3fn.safetensors'
+  const fluxClipL = process.env.SD_FLUX_CLIP_L || 'clip_l.safetensors'
+  const fluxVae = process.env.SD_FLUX_VAE || 'ae.safetensors'
+
+  const workflow = isFlux
+    ? {
+        // Flux 전용 워크플로우: UNET + CLIP(T5XXL+CLIP-L) + VAE 별도 로드
+        '1': { class_type: 'UNETLoader', inputs: { unet_name: model, weight_dtype: 'fp8_e4m3fn' } },
+        '2': { class_type: 'DualCLIPLoader', inputs: { clip_name1: fluxClipT5, clip_name2: fluxClipL, type: 'flux' } },
+        '3': { class_type: 'VAELoader', inputs: { vae_name: fluxVae } },
+        '4': { class_type: 'CLIPTextEncode', inputs: { text: positivePrompt, clip: ['2', 0] } },
+        '5': { class_type: 'EmptyLatentImage', inputs: { width, height, batch_size: 1 } },
+        '6': {
+          class_type: 'KSampler',
+          inputs: {
+            seed, steps, cfg: cfgScale,
+            sampler_name: 'euler', scheduler: 'simple', denoise: 1,
+            model: ['1', 0], positive: ['4', 0], negative: ['4', 0],
+            latent_image: ['5', 0],
+          },
+        },
+        '7': { class_type: 'VAEDecode', inputs: { samples: ['6', 0], vae: ['3', 0] } },
+        '8': { class_type: 'SaveImage', inputs: { filename_prefix: 'blog-ai', images: ['7', 0] } },
+      }
+    : {
+        // SD1.5 / SDXL 체크포인트 워크플로우
+        '4': { class_type: 'CheckpointLoaderSimple', inputs: { ckpt_name: model } },
+        '5': { class_type: 'EmptyLatentImage', inputs: { width, height, batch_size: 1 } },
+        '6': { class_type: 'CLIPTextEncode', inputs: { text: positivePrompt, clip: ['4', 1] } },
+        '7': { class_type: 'CLIPTextEncode', inputs: { text: negativePrompt, clip: ['4', 1] } },
+        '3': {
+          class_type: 'KSampler',
+          inputs: {
+            seed, steps, cfg: cfgScale,
+            sampler_name: 'dpmpp_2m', scheduler: 'karras', denoise: 1,
+            model: ['4', 0], positive: ['6', 0], negative: ['7', 0],
+            latent_image: ['5', 0],
+          },
+        },
+        '8': { class_type: 'VAEDecode', inputs: { samples: ['3', 0], vae: ['4', 2] } },
+        '9': { class_type: 'SaveImage', inputs: { filename_prefix: 'blog-ai', images: ['8', 0] } },
+      }
 
   try {
     // 1) 큐에 추가
+    console.log(`[SD] submitting job to ComfyUI: model=${model}, steps=${steps}, isFlux=${isFlux}`)
     const queueRes = await fetch(`${baseUrl}/prompt`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -517,18 +559,36 @@ async function generateWithLocalSD(query: string, sdModelOverride?: string, blog
     type HistoryOutput = { images?: Array<{ filename: string; subfolder: string; type: string }> }
     type HistoryEntry = { outputs?: Record<string, HistoryOutput> }
     let outputs: Record<string, HistoryOutput> | undefined
+    let pollCount = 0
 
     while (Date.now() < deadline) {
       await new Promise((r) => setTimeout(r, 3000))
+      pollCount++
       const histRes = await fetch(`${baseUrl}/history/${prompt_id}`, { signal: AbortSignal.timeout(10_000) })
       if (!histRes.ok) continue
       const history = await histRes.json() as Record<string, HistoryEntry>
       if (history[prompt_id]?.outputs) {
+        console.log(`[SD] job done after ${pollCount} polls (~${pollCount * 3}s)`)
         outputs = history[prompt_id].outputs
         break
       }
+      if (pollCount % 10 === 0) {
+        console.log(`[SD] still waiting... ${Math.round((Date.now() - (deadline - timeout)) / 1000)}s elapsed`)
+      }
     }
-    if (!outputs) return []
+    if (!outputs) {
+      console.log(`[SD] timeout after ${Math.round(timeout / 1000)}s — cancelling job ${prompt_id}`)
+      try {
+        await fetch(`${baseUrl}/interrupt`, { method: 'POST', signal: AbortSignal.timeout(5_000) })
+        await fetch(`${baseUrl}/queue`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ delete: [prompt_id] }),
+          signal: AbortSignal.timeout(5_000),
+        })
+      } catch { /* 취소 실패는 무시 */ }
+      return []
+    }
 
     // 3) 이미지 파일 정보 추출
     const nodeOut = Object.values(outputs).find((o) => (o.images?.length ?? 0) > 0)
@@ -716,9 +776,14 @@ export async function resolveImagesForPost(options: ResolveImageOptions): Promis
 
   const usedSet = await getUsedImageSet()
 
-  const cleaned = dedupeImages(fetched)
+  const deduped = dedupeImages(fetched)
     .filter((item) => !containsNsfw(`${item.title} ${item.pageUrl}`))
-    .filter((item) => !usedSet.has(item.url))
+
+  // 사용하지 않은 이미지 우선. 전부 소진됐으면 usedSet 무시하고 재사용 (이미지 풀 고갈 방지)
+  const unusedPool = deduped.filter((item) => !usedSet.has(item.url))
+  const sourcePool = unusedPool.length > 0 ? unusedPool : deduped
+
+  const cleaned = sourcePool
     .map((item) => ({
       ...item,
       relevanceScore: computeRelevance(item, topic, keywords, issueTopic),
@@ -836,7 +901,7 @@ export function injectImageEnhancements(html: string, images: ImageCandidate[]):
       sdInjected = true
       const img = sdImages[0]
       const safeAlt = img.title.replace(/"/g, '&quot;')
-      const figure = `\n<figure style="margin:2em auto;text-align:center"><img src="${img.url}" alt="${safeAlt}" loading="lazy" decoding="async" style="max-width:100%;height:auto;border-radius:8px;display:block;margin:0 auto" /><figcaption style="text-align:center;font-size:0.8em;color:#999;margin-top:6px">🎨 AI Generated</figcaption></figure>\n`
+      const figure = `\n<figure style="margin:2em auto;text-align:center"><img src="${img.url}" alt="${safeAlt}" loading="lazy" decoding="async" style="max-width:100%;height:auto;border-radius:8px;display:block;margin:0 auto" /></figure>\n`
       return `${closingTag}${figure}`
     })
   }

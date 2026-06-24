@@ -110,8 +110,10 @@ async function searchCommons(query: string, fetchLimit: number): Promise<SafeIma
     .map((page) => {
       const info = page.imageinfo?.[0]
       const metadata = info?.extmetadata
-      const title = stripHtml(metadata?.ObjectName?.value) || stripHtml(metadata?.ImageDescription?.value) || page.title?.replace(/^File:/, '') || 'Wikimedia Commons image'
-      const imageUrl = info?.thumburl || info?.url || ''
+      const rawUrl = info?.thumburl || info?.url || ''
+      const rawTitle = page.title || ''
+      const title = stripHtml(metadata?.ObjectName?.value) || stripHtml(metadata?.ImageDescription?.value) || rawTitle.replace(/^File:/, '') || 'Wikimedia Commons image'
+      const imageUrl = rawUrl
       const pageUrl = info?.descriptionurl || page.canonicalurl || ''
 
       return {
@@ -121,8 +123,20 @@ async function searchCommons(query: string, fetchLimit: number): Promise<SafeIma
         sourceName: 'Wikimedia Commons',
         license: stripHtml(metadata?.LicenseShortName?.value) || 'License info on source page',
         author: stripHtml(metadata?.Artist?.value) || 'Unknown author',
+        _rawUrl: rawUrl,
+        _rawTitle: rawTitle,
       }
     })
-    .filter((item) => item.imageUrl && item.pageUrl)
+    .filter((item) => {
+      if (!item.imageUrl || !item.pageUrl) return false
+      const lowerUrl = item._rawUrl.toLowerCase()
+      const lowerTitle = item._rawTitle.toLowerCase()
+      if (lowerUrl.includes('.pdf')) return false
+      if (/\b(18|19)\d{2}-\d{2}-\d{2}\b/.test(item._rawTitle)) return false
+      if (/\.(svg|tif|tiff|djvu|ogg|ogv|webm|mp3|wav|pdf)(\.|$)/i.test(lowerUrl)) return false
+      if (lowerTitle.includes('newspaper') || lowerTitle.includes('archive')) return false
+      return true
+    })
+    .map(({ _rawUrl: _u, _rawTitle: _t, ...rest }) => rest)
     .slice(0, fetchLimit)
 }

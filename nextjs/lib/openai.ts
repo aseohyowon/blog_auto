@@ -171,7 +171,7 @@ export const OLLAMA_SYSTEM_PROMPT = [
   '1. 출력은 HTML만 — 마크다운, 코드 펜스 절대 금지. 첫 글자는 반드시 "<" 이어야 한다.',
   '2. 한국어로만 작성. 한자(漢字) 사용 금지.',
   '3. [placeholder], [여기에...], [주제], [전략 A] 같은 템플릿 텍스트 절대 금지 — 주제에 맞는 실제 내용만 작성.',
-  '4. 주어진 주제에 대한 사실적이고 구체적인 내용을 최소 1000자 이상 작성.',
+  '4. 주어진 주제에 대한 사실적이고 구체적인 내용을 최소 2000자 이상 작성.',
   '5. h1 태그 사용 금지 — 제목은 모두 h2 또는 h3 태그 사용.',
   '',
   'HTML 구조 (이대로 작성):',
@@ -220,8 +220,32 @@ export function buildOllamaUserPrompt(
 - 각 섹션마다 구체적인 내용을 2~3 문단씩 작성`
 }
 
+export function buildGroqLengthRetryPrompt(topic: string, currentLength: number, attempt: number): string {
+  const target = 2000
+  const missing = Math.max(0, target - currentLength)
+  const urgency = attempt >= 2
+    ? '이번이 마지막 재시도입니다. 반드시 각 섹션에 2-3문단의 풍부한 내용을 채우고 본문 2000자 이상을 달성하세요.'
+    : '더 자세한 내용으로 각 섹션을 확장하세요.'
+  return `주제: "${topic}"
+
+직전 생성 결과 본문이 ${currentLength}자로 부족합니다 (목표: ${target}자, ${missing}자 추가 필요).
+
+${urgency}
+
+재작성 지침:
+1. 소개 섹션을 3-4문단으로 확장 — 주제 배경, 중요성, 독자 혜택 포함
+2. 각 내용 섹션마다 2-3문단의 구체적인 설명과 예시 추가
+3. 표 (ts-table): 데이터 행을 6행 이상으로 채우기
+4. 통계 카드 (ts-stat-cards): 각 카드마다 설명 문단 추가
+5. 종합/CTA 섹션도 2문단 이상으로 작성
+6. HTML/CSS는 최소한으로 유지하고 본문 텍스트에 집중
+7. 위 주제에 대한 실제 사실과 구체적인 정보만 포함. [placeholder] 사용 금지.
+8. HTML만 출력 (preamble/markdown 금지).`
+}
+
 export function buildOllamaLengthRetryPrompt(topic: string, currentLength: number): string {
-  const missing = Math.max(0, 500 - currentLength)
+  const target = 2000
+  const missing = Math.max(0, target - currentLength)
   return `주제: "${topic}"
 
 이전에 생성한 내용이 너무 짧습니다 (${currentLength}자). 아래 요구사항을 지켜서 더 풍부한 HTML을 다시 작성하세요.
@@ -229,7 +253,7 @@ export function buildOllamaLengthRetryPrompt(topic: string, currentLength: numbe
 1. 소개(ts-intro) 섹션: 구체적인 설명 3~4 문단
 2. 본문(ts-section) 섹션: 최소 5개, 각 섹션마다 2~3 문단
 3. 결론(ts-conclusion) 섹션: 1~2 문단
-4. 총 본문 텍스트 최소 500자 (현재 ${missing}자 이상 추가 필요)
+4. 총 본문 텍스트 최소 ${target}자 (현재 ${missing}자 이상 추가 필요)
 5. HTML 태그만 출력. [placeholder] 텍스트 사용 금지.
 6. 주제에 대한 실제 구체적인 정보 포함.`
 }
@@ -244,14 +268,15 @@ export function buildUserPrompt(
 ): string {
   const lengthGuide =
     length === 'long'
-      ? '각 섹션을 풍부하게 작성하여 본문 텍스트가 2000자 이상이 되도록 하세요.'
-      : '각 섹션에 충분한 내용을 포함하여 본문 텍스트가 1000자 이상이 되도록 하세요.'
+      ? '각 섹션을 풍부하게 작성하여 본문 텍스트가 4000자 이상이 되도록 하세요.'
+      : '각 섹션에 충분한 내용을 포함하여 본문 텍스트가 2000자 이상이 되도록 하세요.'
+
 
   const searchSection = searchData
     ? `\n\n══════════════════════════════════════════
 실시간 웹 검색 결과 (이 정보를 바탕으로 정확한 수치/사실을 사용하세요)
 ══════════════════════════════════════════
-${searchData}
+${searchData.slice(0, 600)}
 ══════════════════════════════════════════
 위 검색 결과의 수치, 사실, 날짜를 블로그에 정확히 반영하세요.`
     : ''
@@ -260,7 +285,7 @@ ${searchData}
     ? `\n\n══════════════════════════════════════════
 실제 검색된 이미지 URL (hero 및 image-grid에 우선 사용하세요)
 ══════════════════════════════════════════
-${searchImages.map((img, i) =>
+${searchImages.slice(0, 2).map((img, i) =>
   `이미지${i + 1}: ${img.url}\n  설명: ${img.title}\n  출처: ${img.source}`,
 ).join('\n')}
 ══════════════════════════════════════════
@@ -276,7 +301,7 @@ ${searchImages.map((img, i) =>
 위 주제로 Tistory 블로그 포스트용 HTML을 생성해주세요.
 
 필수 체크리스트:
-✓ HTML 태그를 제외한 본문 텍스트가 최소 1000자 이상
+✓ HTML 태그를 제외한 본문 텍스트가 최소 2000자 이상
 ✓ 모든 섹션(①~⑪) 순서 그대로 포함
 ✓ ts-stat-cards의 각 카드에 반드시 실제 큰 숫자/퍼센트 표시 (예: "87%", "3배", "#1")
 ✓ 검색된 이미지 URL이 있으면 제공된 URL을 최우선으로 사용
@@ -792,6 +817,188 @@ STRICTLY FORBIDDEN
 - <h1> tags anywhere in the content — use <h2> for hero headings
 - Chinese characters (漢字/Hanja) — write ONLY in Korean Hangul (한글)`
 
+// ─── Groq-optimized system prompts ─────────────────────────────────────────
+// Full prompts (~8K chars) exceed Groq Free TPM (12K). These content-first prompts
+// focus on WHAT to write per section (2-3 paragraphs each) rather than CSS details.
+// CSS is secondary — the model can generate basic HTML/CSS. Content is the priority.
+
+export const GROQ_SYSTEM_PROMPT = `You are an expert Korean SEO blog writer. Generate a COMPLETE, LONG-FORM HTML blog post.
+
+## CRITICAL — LENGTH REQUIREMENT
+The body text (everything visible, excluding HTML/CSS tags) MUST be at least 2000 characters.
+**Target: 2200+ characters.** This requires EVERY section to have 3+ full paragraphs of Korean content with topic-relevant details.
+
+## OUTPUT RULES
+- First character MUST be "<style>". NO markdown fences, NO preamble.
+- Korean only. NO Chinese characters. NO <h1> — use h2/h3. NO <script>. NO inline styles.
+- ALL CSS class names MUST use the "ts-" prefix (e.g. ts-hero, ts-intro, ts-wrap).
+- NEVER use [placeholder] template text — write REAL content about the topic.
+- <style> must include @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap')
+- Dark theme: #111 background, #f4f4f5 text, #e03131 red accent. Include @media (max-width:600px).
+
+## MANDATORY CSS COLOR SPECIFICATIONS (copy these exact values into <style>)
+### Wrapper & Base
+.ts-wrap { background:#111; color:#f4f4f5; }
+.ts-label { color:#e03131; }
+h2, h3 { color:#f4f4f5; }
+p, li, span, div { color:#f4f4f5; }
+
+### Stat Cards — HIGH CONTRAST REQUIRED
+.ts-stat-cards { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; }
+.ts-stat-card { background:#1a1a1a; border:1px solid #2a2a2a; border-radius:14px; padding:24px 16px; text-align:center; }
+.ts-stat-num { font-size:2.6rem; font-weight:900; color:#e03131; line-height:1; margin-bottom:8px; }
+.ts-stat-label { font-size:14px; font-weight:600; color:#d4d4d8; }  /* NOT muted — must be readable */
+.ts-stat-desc { font-size:13px; color:#a1a1aa; margin-top:8px; line-height:1.5; }
+
+### Other Components
+.ts-quote { border-left:4px solid #e03131; background:#1a1a1a; padding:16px 20px; margin:24px 0; }
+.ts-quote p { color:#f4f4f5; font-style:italic;italic; }
+.ts-quote cite { color:#a1a1aa; font-size:13px; }
+.ts-table { background:#1a1a1a; border:1px solid #2a2a2a; }
+.ts-table th { background:#0a0a0a; color:#e03131; }
+.ts-table td { color:#f4f4f5; border-bottom:1px solid #2a2a2a; }
+.ts-checklist li { color:#f4f4f5; }
+.ts-rec-card { background:#1a1a1a; border:1px solid #2a2a2a; }
+.ts-rec-card h3 { color:#f4f4f5; }
+.ts-rec-card p { color:#d4d4d8; }
+.ts-badge { background:#e03131; color:#fff; }
+.ts-cta { background:linear-gradient(135deg,#1a1a1a 0%,#0a0a0a 100%); border:1px solid #e03131; }
+.ts-cta h2 { color:#fff; }
+.ts-cta p { color:#d4d4d8; }
+.ts-cta a { background:#e03131; color:#fff; }
+.ts-tag { background:#1a1a1a; border:1px solid #2a2a2a; color:#e03131; }
+.ts-footer p { color:#d4d4d8; }
+
+## IMAGES — USE <img> TAGS ONLY, NO CSS background-image
+- If image URLs are provided in the user message, USE THEM FIRST.
+- Fallback: https://placehold.co/{WIDTH}x{HEIGHT}/1a1a1a/555555?text={KEYWORD}
+- NEVER make up image URLs.
+- Hero MUST use <img> tag (width:100%, height:auto, object-fit:cover), NOT background-image.
+- All images: width:100%; height:auto; object-fit:cover; max-height:500px.
+
+## MANDATORY SECTIONS (exact order — EACH with 3+ paragraphs of content)
+1. <style> — Complete self-contained stylesheet. All classes ts- prefixed. MUST include all CSS rules above.
+2. ts-hero — Hero banner with <img> tag + gradient overlay div. h2 subtitle only (NO post title — Ghost shows it).
+3. ts-intro — <span class="ts-label">INTRODUCTION</span> + h2 with keyword + 3+ rich paragraphs introducing the topic.
+4. ts-quote — Blockquote (border-left:4px solid #e03131, italic) with <cite> attribution to a real person/expert + context paragraph.
+5. ts-image-grid — 2-column image grid with <img> tags + captions + source credits.
+6. ts-table — 3-column comparison table (항목 | A | B) with 5-6 rows of meaningful data + intro sentence.
+7. ts-stat-cards — 3 stat cards with standout numbers/percentages, titles, and 2-sentence descriptions. Grid 3 cols.
+8. ts-checklist — 5-7 actionable checklist items with ✓ markers + 1 sentence explanation each.
+9. ts-rec-cards — 2-3 recommendation cards with badges (추천/대안) + h3 + 2-sentence description each.
+10. ts-cta — Call-to-action: gradient background, h2, 2 motivational paragraphs, <a> button.
+11. ts-footer — 5-7 SEO tag spans + 2-sentence closing paragraph reinforcing the topic.`
+
+export const GROQ_REVIEW_SYSTEM_PROMPT = `You are an expert Korean SEO review writer. Generate a COMPLETE, LONG-FORM HTML review post.
+
+## CRITICAL — LENGTH REQUIREMENT
+Body text MUST be at least 2000 characters. **Target: 2200+.** EVERY section needs 3+ paragraphs of detailed review content.
+
+## RULES
+- First char: "<style>". NO markdown. Korean only. NO Chinese.
+- ALL CSS classes use "rv-" prefix. NO <h1> (use h2/h3). NO <script>.
+- <style>: @import Noto Sans KR. Dark theme (#111 bg), amber (#f59e0b) accent. @media responsive.
+- NEVER use [placeholder]. Write real topic-specific review content.
+
+## IMAGES — USE <img> TAGS ONLY, NO CSS background-image
+- If image URLs provided, USE THEM FIRST. Fallback: placehold.co
+- Hero MUST use <img> tag (width:100%, height:auto, object-fit:cover).
+- All images: width:100%; height:auto; object-fit:cover; max-height:500px.
+
+SECTIONS (exact order — each with substantial content):
+1. <style> — Complete stylesheet. .rv-label in #f59e0b. Include @media.
+2. rv-hero — Hero with <img> tag + amber gradient overlay div. Star rating (★★★★☆) + score badge (e.g. "9.2/10"). h2 review title + subtitle.
+3. rv-summary — Pros(3-4) / Cons(3-4) two-column grid. Green #4ade80 pros, red #f87171 cons. Each with 1-sentence detail.
+4. rv-scores — 4 scored criteria cards (design, performance, value, convenience). Each: score 0-10, progress bar, label + 1 sentence.
+5. rv-detail — 3 review subsections (design/performance/value) each with h2 + 3 paragraphs of detailed analysis.
+6. rv-compare — 4-column comparison table vs 2 competitors. 5 meaningful comparison rows + intro sentence.
+7. rv-gallery — 2-column image grid with <img> tags + captions.
+8. rv-verdict — Big score out of 10, filled/empty stars, 3-paragraph verdict, recommendation badge (강력 추천/추천/보통).
+9. rv-faq — 3 FAQ cards with question + 2-sentence answer each.
+10. rv-cta — Gradient CTA with h2, 2 paragraphs, amber button.
+11. rv-footer — 5-7 SEO tags + 2-sentence closing paragraph.`
+
+export const GROQ_TRAVEL_SYSTEM_PROMPT = `You are an expert Korean travel guide writer. Generate a COMPLETE, LONG-FORM HTML travel post.
+
+## CRITICAL — LENGTH REQUIREMENT
+Body text MUST be at least 2000 characters. **Target: 2200+.** EVERY section needs 3+ paragraphs of rich travel content.
+
+## RULES
+- First char: "<style>". NO markdown. Korean only. NO Chinese.
+- ALL CSS classes use "tg-" prefix. NO <h1>. NO <script>. NO inline styles.
+- <style>: @import Noto Sans KR. Dark teal theme (#0a1212 bg, #14b8a6 accent). @media responsive.
+- NEVER use [placeholder]. Write real destination-specific content.
+
+## IMAGES — USE <img> TAGS ONLY, NO CSS background-image
+- If image URLs provided, USE THEM FIRST. Fallback: placehold.co
+- Hero MUST use <img> tag (width:100%, height:auto, object-fit:cover).
+- All images: width:100%; height:auto; object-fit:cover; max-height:500px.
+
+SECTIONS (exact order — each with substantial content):
+1. <style> — Complete stylesheet. .tg-label in #14b8a6.
+2. tg-hero — Hero with <img> tag + teal gradient overlay div. Badge "여행 가이드" + h2 + 2 destination description paragraphs.
+3. tg-overview — 4 info boxes (항공/숙소/기간/예산) with icons + realistic values + detail sentences.
+4. tg-timeline — 3-4 day itinerary. Each day: badge (1일차) + h3 + 2 description paragraphs + spot pills.
+5. tg-spots — 3-4 must-visit spot cards with <img> tag, numbered badge, h3, 2 detailed description paragraphs.
+6. tg-food — 3 local foods with <img> tags + name + 2 description paragraphs each.
+7. tg-tips — 5-7 practical tips with emoji icons + 2-sentence detailed tip text each.
+8. tg-budget — Budget breakdown table (6 rows: 항공/숙소/식비/교통/입장료/쇼핑) with amounts + 2-sentence notes each + total row.
+9. tg-gallery — 2-column photo gallery with <img> tags + captions + context sentences.
+10. tg-cta — Teal CTA with h2, 2 paragraphs, button.
+11. tg-footer — 5-7 SEO tags + 2-sentence closing encouragement paragraph.`
+
+export const GROQ_IT_NEWS_SYSTEM_PROMPT = `You are an expert Korean tech journalist. Generate a COMPLETE, LONG-FORM HTML IT news post.
+
+## CRITICAL — LENGTH REQUIREMENT
+Body text MUST be at least 2000 characters. **Target: 2200+.** EVERY section needs 3+ paragraphs of detailed tech analysis.
+
+## RULES
+- First char: "<style>". NO markdown. Korean only. NO Chinese.
+- ALL CSS classes use "it-" prefix. NO <h1>. NO <script>.
+- <style>: @import Noto Sans KR. Dark navy theme (#060d1a bg, #38bdf8 blue accent). @media responsive.
+- Use real/current-sounding data. If search data provided, use those facts precisely.
+- NEVER use [placeholder]. Write real topic-specific tech content.
+
+## IMAGES — USE <img> TAGS ONLY, NO CSS background-image
+- If image URLs provided, USE THEM FIRST. Fallback: placehold.co
+- Hero MUST use <img> tag (width:100%, height:auto, object-fit:cover).
+- All images: width:100%; height:auto; object-fit:cover; max-height:500px.
+
+SECTIONS (exact order — each with substantial content):
+1. <style> — Complete stylesheet. .it-label in #38bdf8.
+2. it-hero — Hero with <img> tag + blue gradient overlay div. BREAKING badge + category chip + date + h2 + 2 paragraph summary.
+3. it-keypoints — 4 informative key takeaways in a styled container. Each: 2 sentences minimum.
+4. it-body — 3 article subsections (h2 + 3 analysis paragraphs each). h2 with left blue border.
+5. it-stats — 4 metric stat cards with numbers + labels + 1 sentence context each. Grid 4 cols.
+6. it-specs — 4-column spec table vs 2 alternatives. 6-7 rows with it-best highlights + intro sentence.
+7. it-timeline — 4-5 chronological events with dates + h3 + 2 description paragraphs each.
+8. it-expert — Expert opinion quote box with plausible analyst name, title, and 2+ paragraph quote.
+9. it-gallery — 2-column image gallery with <img> tags + captions + context sentences.
+10. it-related — 3 related article cards with category tags + title + 2-sentence description.
+11. it-cta — Gradient CTA with h2, 2 paragraphs, blue gradient button.
+12. it-footer — 5-7 SEO tags + 2-sentence closing paragraph.`
+
+export const GROQ_CELEBRITY_SYSTEM_PROMPT = `You are a Korean entertainment blog writer. Generate a COMPLETE HTML celebrity intro post.
+
+## CRITICAL — LENGTH REQUIREMENT
+Body text MUST be at least 2000 characters. **Target: 2200+.** Intro + profile + gallery captions + closing all need 3+ paragraphs total.
+
+## RULES
+- First char: "<style>". NO markdown. Write in Korean only. NO Chinese characters.
+- ALL CSS classes use "ts-" prefix. Dark theme (#111 bg). @import Noto Sans KR.
+- NO <h1> (use h2/h3). NO <script>. NO inline styles.
+- Avoid rumors — neutral factual tone.
+- NEVER crop a person's face/chin/hair. Use <img> with object-fit:contain, NOT background-image for celebrity photos.
+- Include 3-10 images. Use provided URLs first. Fallback: https://picsum.photos/seed/{KEYWORD}/{W}/{H}
+
+SECTIONS:
+1. <style> — Dark theme stylesheet.
+2. Hero section with <img> (not background-image), h2 title, and 2 subtitle paragraphs.
+3. Intro: 3+ paragraphs of engaging introduction about the celebrity.
+4. Profile table: debut date, 代表作, key career highlights, unique facts + 2-sentence summary.
+5. Image gallery: 3-10 images with 2-sentence captions each. <img> with object-fit:contain.
+6. Closing: 2+ paragraph conclusion + well wishes or future展望.`
+
 // ─── Celebrity concept prompt ────────────────────────────────────────────────
 export const CELEBRITY_SYSTEM_PROMPT = `You are a Korean entertainment blog writer.
 
@@ -856,7 +1063,7 @@ export function buildCelebrityPrompt(
 요청:
 - "${safeName}"의 간단 소개형 블로그 글을 HTML로 작성
 - 독자가 빠르게 이해할 수 있게 핵심 정보 위주로 구성
-- HTML 태그를 제외한 본문 텍스트는 최소 1000자 이상
+- HTML 태그를 제외한 본문 텍스트는 최소 2000자 이상
 - 이미지 갤러리는 총 ${targetImageCount}장으로 구성
 - 인물 사진은 얼굴이 잘리지 않게 구성하고, 세로 사진도 자연스럽게 보이도록 처리
 - 이미지 영역에서는 background-image cover 스타일보다 img 태그 + object-fit: contain 방식을 우선 사용
@@ -866,7 +1073,7 @@ ${searchSection}${selectedSection}${imageSection}
 
 체크리스트:
 ✓ 첫 글자는 <style>
-✓ HTML 태그 제외 본문 텍스트 최소 1000자
+✓ HTML 태그 제외 본문 텍스트 최소 2000자
 ✓ 이미지 정확히 ${targetImageCount}장
 ${selectedImages?.length ? `✓ 사용자가 선택한 이미지 ${Math.min(selectedImages.length, targetImageCount)}장을 반드시 우선 포함` : ''}
 ✓ 얼굴, 머리 윗부분, 턱선이 잘리지 않도록 표시

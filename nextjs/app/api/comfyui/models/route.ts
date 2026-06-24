@@ -7,17 +7,22 @@ export async function GET() {
   }
 
   try {
-    const res = await fetch(`${baseUrl}/object_info/CheckpointLoaderSimple`, {
-      signal: AbortSignal.timeout(5000),
-    })
-    if (!res.ok) throw new Error(`status ${res.status}`)
+    const [checkpointRes, unetRes] = await Promise.all([
+      fetch(`${baseUrl}/object_info/CheckpointLoaderSimple`, { signal: AbortSignal.timeout(5000) }),
+      fetch(`${baseUrl}/object_info/UNETLoader`, { signal: AbortSignal.timeout(5000) }),
+    ])
 
-    const data = await res.json() as {
-      CheckpointLoaderSimple?: {
-        input?: { required?: { ckpt_name?: [string[]] } }
-      }
-    }
-    const models = data.CheckpointLoaderSimple?.input?.required?.ckpt_name?.[0] ?? []
+    const checkpointData = checkpointRes.ok ? await checkpointRes.json() as {
+      CheckpointLoaderSimple?: { input?: { required?: { ckpt_name?: [string[]] } } }
+    } : {}
+    const unetData = unetRes.ok ? await unetRes.json() as {
+      UNETLoader?: { input?: { required?: { unet_name?: [string[]] } } }
+    } : {}
+
+    const checkpointModels: string[] = checkpointData.CheckpointLoaderSimple?.input?.required?.ckpt_name?.[0] ?? []
+    const unetModels: string[] = unetData.UNETLoader?.input?.required?.unet_name?.[0] ?? []
+    const models = [...checkpointModels, ...unetModels]
+
     return NextResponse.json({
       connected: true,
       models,
